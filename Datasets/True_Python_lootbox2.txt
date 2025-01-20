@@ -1,0 +1,49 @@
+import sqlite3
+import random
+
+attempt_count = 0
+current_probability = 0.0
+initial_probability = 0.0
+
+def get_initial_probability_from_db(db_path):
+    global initial_probability
+    initial_probability = 0.04
+    connection = sqlite3.connect(db_path)
+    cursor = connection.cursor()
+    cursor.execute("SELECT initial_probability FROM settings LIMIT 1;")
+    result = cursor.fetchone()
+    if result:
+        try:
+            initial_probability = float(result[0])
+        except ValueError:
+            pass
+    connection.close()
+
+def try_item():
+    global attempt_count, current_probability
+    if attempt_count == 0:
+        current_probability = initial_probability
+
+    if current_probability > initial_probability * 0.5:
+        current_probability -= 0.002
+        if current_probability < initial_probability * 0.5:
+            current_probability = initial_probability * 0.5
+    elif current_probability < initial_probability * 1.2:
+        current_probability += 0.002
+        if current_probability > initial_probability * 1.2:
+            current_probability = initial_probability * 1.2
+
+    random_value = random.random()
+    success = random_value <= current_probability
+
+    attempt_count += 1
+
+    print(f"Current Probability: {current_probability * 100:.2f}%")
+    return success
+
+if __name__ == "__main__":
+    db_path = 'prob.db'
+    get_initial_probability_from_db(db_path)
+    for i in range(10):
+        result = try_item()
+        print(f"Attempt {i + 1}: {'Success' if result else 'Failure'}")

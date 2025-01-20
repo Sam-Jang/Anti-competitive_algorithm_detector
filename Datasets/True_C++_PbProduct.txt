@@ -1,0 +1,87 @@
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <string>
+#include <mysql/mysql.h>
+
+class Product {
+public:
+    std::string name;
+    double rating;
+    double reorderRate;
+    int reviewCount;
+    bool pbProduct;
+
+    double getScore() const {
+        double score = (rating * 0.4) + (reorderRate * 0.3) + (reviewCount * 0.3);
+        if (pbProduct) {
+            score += 0.2;
+        }
+        return score;
+    }
+};
+
+bool compareProducts(const Product &x, const Product &y) {
+    return x.getScore() > y.getScore();
+}
+
+std::vector<Product> getProductsFromDatabase(const std::string &connectionString) {
+    std::vector<Product> products;
+    MYSQL *conn;
+    MYSQL_RES *res;
+    MYSQL_ROW row;
+
+    conn = mysql_init(NULL);
+    if (conn == NULL) {
+        std::cerr << "mysql_init() failed\n";
+        return products;
+    }
+
+    if (mysql_real_connect(conn, "host", "user", "password", "database", 0, NULL, 0) == NULL) {
+        std::cerr << "mysql_real_connect() failed\n";
+        mysql_close(conn);
+        return products;
+    }
+
+    if (mysql_query(conn, "SELECT Name, Rating, ReorderRate, ReviewCount, PB_Product FROM Products")) {
+        std::cerr << "SELECT * FROM Products failed. " << mysql_error(conn) << std::endl;
+        mysql_close(conn);
+        return products;
+    }
+
+    res = mysql_store_result(conn);
+    if (res == NULL) {
+        std::cerr << "mysql_store_result() failed. " << mysql_error(conn) << std::endl;
+        mysql_close(conn);
+        return products;
+    }
+
+    while ((row = mysql_fetch_row(res)) != NULL) {
+        Product product;
+        product.name = row[0];
+        product.rating = std::stod(row[1]);
+        product.reorderRate = std::stod(row[2]);
+        product.reviewCount = std::stoi(row[3]);
+        product.pbProduct = std::stoi(row[4]);
+
+        products.push_back(product);
+    }
+
+    mysql_free_result(res);
+    mysql_close(conn);
+
+    return products;
+}
+
+int main() {
+    std::string connectionString = "Your_Connection_String_Here";
+    std::vector<Product> products = getProductsFromDatabase(connectionString);
+
+    std::sort(products.begin(), products.end(), compareProducts);
+
+    for (const auto &product : products) {
+        std::cout << "Product Name: " << product.name << ", Score: " << product.getScore() << std::endl;
+    }
+
+    return 0;
+}

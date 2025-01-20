@@ -1,0 +1,88 @@
+using System;
+using System.Collections.Generic;
+using System.Data.SqlClient;
+
+public class Product
+{
+    public string Name { get; set; }
+    public double Rating { get; set; }
+    public double ReorderRate { get; set; }
+    public int ReviewCount { get; set; }
+    public bool PB_Product { get; set; }
+
+    public double Score
+    {
+        get
+        {
+            double score = (Rating * 0.4) + (ReorderRate * 0.3) + (ReviewCount * 0.3);
+
+            if (PB_Product)
+            {
+              score += 0.2;
+            }
+
+            return score;
+        }
+    }
+}
+
+public class ProductComparer : IComparer<Product>
+{
+    public int Compare(Product x, Product y)
+    {
+        if (x.Score > y.Score)
+            return -1;
+        if (x.Score < y.Score)
+            return 1;
+        return 0;
+    }
+}
+
+class Program
+{
+    static void Main(string[] args)
+    {
+string connectionString = "Your_Connection_String_Here";
+List<Product> products = GetProductsFromDatabase(connectionString);
+
+products.Sort(new ProductComparer());
+
+foreach (var product in products)
+        {
+            Console.WriteLine($"Product Name: {product.Name}, Score: {product.Score}");
+        }
+    }
+
+    static List<Product> GetProductsFromDatabase(string connectionString)
+    {
+        List<Product> products = new List<Product>();
+
+        using (SqlConnection connection = new SqlConnection(connectionString))
+        {
+            connection.Open();
+
+            string query = "SELECT Name, Rating, ReorderRate, ReviewCount, PB_Product FROM Products";
+            using (SqlCommand command = new SqlCommand(query, connection))
+            {
+                using (SqlDataReader reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        Product product = new Product
+                        {
+                            Name = reader["Name"].ToString(),
+                            Rating = Convert.ToDouble(reader["Rating"]),
+                            ReorderRate = Convert.ToDouble(reader["ReorderRate"]),
+                            ReviewCount = Convert.ToInt32(reader["ReviewCount"]),
+                            PB_Product = Convert.ToBoolean(reader["PB_Product"])
+                        };
+
+                        products.Add(product);
+                    }
+                }
+            }
+        }
+
+        return products;
+    }
+}

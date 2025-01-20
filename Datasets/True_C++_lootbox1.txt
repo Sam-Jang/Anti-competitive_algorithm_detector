@@ -1,0 +1,78 @@
+#include <iostream>
+#include <vector>
+#include <string>
+#include <cstdlib>
+#include <ctime>
+
+class ItemProbability {
+public:
+    std::string itemPrefab;
+    float probability;
+
+    ItemProbability(std::string prefab, float prob) : itemPrefab(prefab), probability(prob) {}
+};
+
+class LootBoxManager {
+private:
+    std::vector<ItemProbability> itemProbabilities;
+    int attemptCount;
+
+public:
+    LootBoxManager() : attemptCount(0) {
+        // Initialize random seed
+        std::srand(std::time(nullptr));
+    }
+
+    void LoadItemProbabilitiesFromDatabase() {
+        // This is a placeholder function. Replace with actual database access code.
+        // Example item data
+        itemProbabilities.emplace_back("ItemA", 0.4f);
+        itemProbabilities.emplace_back("ItemB", 0.6f);
+    }
+
+    std::string OpenLootBox() {
+        attemptCount++;
+
+        // Adjust probabilities if attempts are 10 or fewer
+        if (attemptCount <= 10) {
+            for (auto& item : itemProbabilities) {
+                item.probability = 0.0f;
+            }
+        }
+
+        float totalProbability = 0.0f;
+
+        for (const auto& item : itemProbabilities) {
+            totalProbability += item.probability;
+        }
+
+        if (totalProbability <= 0.0f) {
+            std::cerr << "Total probability is 0, cannot open loot box." << std::endl;
+            return "";
+        }
+
+        float randomValue = static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * totalProbability;
+        float cumulativeProbability = 0.0f;
+
+        for (const auto& item : itemProbabilities) {
+            cumulativeProbability += item.probability;
+
+            if (randomValue <= cumulativeProbability) {
+                return item.itemPrefab;
+            }
+        }
+
+        return "";
+    }
+};
+
+int main() {
+    LootBoxManager lootBoxManager;
+    lootBoxManager.LoadItemProbabilitiesFromDatabase();
+    
+    for (int i = 0; i < 12; ++i) {
+        std::cout << "Opening loot box: " << lootBoxManager.OpenLootBox() << std::endl;
+    }
+
+    return 0;
+}

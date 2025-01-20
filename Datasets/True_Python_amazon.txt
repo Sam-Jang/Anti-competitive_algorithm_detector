@@ -1,0 +1,89 @@
+import sqlite3
+import random
+
+class Product:
+    def __init__(self, name, price, is_own_product):
+        self.name = name
+        self.price = price
+        self.is_own_product = is_own_product
+
+    def __repr__(self):
+        return f"{self.name} (${self.price}) (Own: {self.is_own_product})"
+
+class Platform:
+    def __init__(self, db_path):
+        # Initialize the database connection
+        self.connection = sqlite3.connect(db_path)
+        self.cursor = self.connection.cursor()
+        self.products = []
+        self.search_results = []
+        self.load_products_from_db()
+    
+    def load_products_from_db(self):
+        # Create the products table if it does not exist
+        self.cursor.execute('''
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            price REAL NOT NULL,
+            is_own_product BOOLEAN NOT NULL
+        )
+        ''')
+        
+        '''
+        self.cursor.execute('DELETE FROM products')
+        products = [
+            ('Product A', 20.0, 0),
+            ('Product B', 15.0, 0),
+            ('Amazon Essentials', 18.0, 1),
+            ('Product D', 22.0, 0),
+            ('Amazon Choice', 25.0, 1)
+        ]
+        self.cursor.executemany('INSERT INTO products (name, price, is_own_product) VALUES (?, ?, ?)', products)
+        self.connection.commit()
+        '''
+        
+        self.cursor.execute('SELECT name, price, is_own_product FROM products')
+        rows = self.cursor.fetchall()
+        
+        for row in rows:
+            name, price, is_own_product = row
+            self.products.append(Product(name, price, bool(is_own_product)))
+
+    def search(self, query):
+        self.search_results = [p for p in self.products if query.lower() in p.name.lower()]
+        own_products = [p for p in self.search_results if p.is_own_product]
+        other_products = [p for p in self.search_results if not p.is_own_product]
+
+        prioritized_results = own_products + other_products
+        return prioritized_results
+
+    def display_results(self, query):
+        results = self.search(query)
+        print(f"Search results for '{query}':")
+        for product in results:
+            print(product)
+    
+    def apply_discounts(self):
+        for product in self.products:
+            if not product.is_own_product:
+                product.price *= 1.2 
+
+    def degrade_experience(self):
+        if random.random() < 0.5:  
+            print("Warning: Search results may be affected by poor quality ads.")
+
+    def simulate_platform(self):
+        self.apply_discounts()
+        self.degrade_experience()
+        user_query = "Product"
+        self.display_results(user_query)
+
+    def close(self):
+        self.connection.close()
+
+if __name__ == "__main__":
+    db_path = 'database.db' 
+    platform = Platform(db_path)
+    platform.simulate_platform()
+    platform.close()

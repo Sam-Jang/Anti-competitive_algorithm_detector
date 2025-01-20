@@ -1,0 +1,95 @@
+using System;
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+
+class Program
+{
+    private static readonly Dictionary<string, string> API_URLS = new()
+    {
+        { "NaverVideo", "https://api.example.com/naver_video_search" },
+        { "YouTube", "https://api.example.com/youtube_search" },
+        { "Twitch", "https://api.example.com/twitch_search" }
+    };
+
+    private static readonly Dictionary<string, string> API_KEYS = new()
+    {
+        { "NaverVideo", "YOUR_NAVER_API_KEY" },
+        { "YouTube", "YOUR_YOUTUBE_API_KEY" },
+        { "Twitch", "YOUR_TWITCH_API_KEY" }
+    };
+
+    static async Task Main()
+    {
+        string keyword = "example";
+        
+        var allResults = new Dictionary<string, List<dynamic>>();
+        foreach (var platform in API_URLS.Keys)
+        {
+            allResults[platform] = await FetchResults(platform, keyword);
+        }
+
+        var prioritizedResults = PrioritizeYouTube(allResults);
+        var sortedByWeight = SortResultsByWeight(prioritizedResults);
+        
+        Console.WriteLine($"Search results for '{keyword}':\n");
+        DisplayResults(sortedByWeight);
+    }
+
+    static async Task<List<dynamic>> FetchResults(string platform, string keyword)
+    {
+        var url = API_URLS[platform];
+        using var client = new HttpClient();
+        client.DefaultRequestHeaders.Add("Authorization", $"Bearer {API_KEYS[platform]}");
+        var response = await client.GetStringAsync($"{url}?q={keyword}");
+        return JsonConvert.DeserializeObject<List<dynamic>>(response);
+    }
+
+    static double CalculateWeight(dynamic result)
+    {
+        double views = (double)result.views;
+        DateTime publishDate = DateTime.Parse((string)result.publish_date);
+        double daysSincePublish = (DateTime.Now - publishDate).TotalDays;
+        return views / (daysSincePublish + 1);
+    }
+
+    static List<dynamic> SortResultsByWeight(List<dynamic> results)
+    {
+        foreach (var result in results)
+        {
+            result.weight = CalculateWeight(result);
+        }
+        results.Sort((x, y) => y.weight.CompareTo(x.weight));
+        return results;
+    }
+
+    static List<dynamic> PrioritizeYouTube(Dictionary<string, List<dynamic>> results)
+    {
+        var sortedResults = new List<dynamic>();
+        if (results.ContainsKey("YouTube"))
+        {
+            sortedResults.AddRange(results["YouTube"]);
+        }
+        foreach (var platform in results.Keys)
+        {
+            if (platform != "YouTube")
+            {
+                sortedResults.AddRange(results[platform]);
+            }
+        }
+        return sortedResults;
+    }
+
+    static void DisplayResults(List<dynamic> results)
+    {
+        foreach (var result in results)
+        {
+            Console.WriteLine($"Title: {result.title}");
+            Console.WriteLine($"URL: {result.url}");
+            Console.WriteLine($"Platform: {result.platform}");
+            Console.WriteLine($"Weight: {result.weight:F2}");
+            Console.WriteLine();
+        }
+    }
+}

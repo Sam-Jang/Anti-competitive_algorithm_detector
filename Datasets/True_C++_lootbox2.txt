@@ -1,0 +1,69 @@
+#include <iostream>
+#include <sqlite3.h>
+#include <random>
+
+int attemptCount = 0;
+double currentProbability;
+double initialProbability;
+
+double getInitialProbabilityFromDB(const std::string& dbPath) {
+    sqlite3* db;
+    sqlite3_stmt* stmt;
+    double initialProbability = 0.04;
+
+    if (sqlite3_open(dbPath.c_str(), &db) == SQLITE_OK) {
+        const char* sql = "SELECT initial_probability FROM settings LIMIT 1;";
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                initialProbability = sqlite3_column_double(stmt, 0);
+            }
+        }
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+    } else {
+        std::cerr << "Error opening database." << std::endl;
+    }
+
+    return initialProbability;
+}
+
+bool tryItem() {
+    if (attemptCount == 0) {
+        currentProbability = initialProbability;
+    }
+
+    if (currentProbability > initialProbability * 0.5) {
+        currentProbability -= 0.002;
+        if (currentProbability < initialProbability * 0.5) {
+            currentProbability = initialProbability * 0.5;
+        }
+    } else if (currentProbability < initialProbability * 1.2) {
+        currentProbability += 0.002;
+        if (currentProbability > initialProbability * 1.2) {
+            currentProbability = initialProbability * 1.2;
+        }
+    }
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+    double randomValue = dis(gen);
+    bool success = randomValue <= currentProbability;
+
+    attemptCount++;
+
+    std::cout << "Current Probability: " << currentProbability * 100 << "%" << std::endl;
+    return success;
+}
+
+int main() {
+    std::string dbPath = "prob.db";
+    initialProbability = getInitialProbabilityFromDB(dbPath);
+
+    for (int i = 0; i < 10; ++i) {
+        bool result = tryItem();
+        std::cout << "Attempt " << (i + 1) << ": " << (result ? "Success" : "Failure") << std::endl;
+    }
+
+    return 0;
+}

@@ -1,0 +1,174 @@
+#include <iostream>
+#include <unordered_map>
+#include <vector>
+#include <string>
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
+#include <cpprest/http_listener.h>
+#include <cpprest/uri.h>
+#include <cpprest/uri_builder.h>
+
+using json = nlohmann::json;
+using namespace web;
+using namespace web::http;
+using namespace web::http::experimental::listener;
+
+const std::unordered_map<std::string, std::string> API_URLS = {
+    {"NeverVideo", "https://api.example.com/never_video_search"},
+    {"iTube", "https://api.example.com/itube_search"},
+    {"Switch", "https://api.example.com/switch_search"}
+};
+
+const std::unordered_map<std::string, std::string> API_KEYS = {
+    {"NeverVideo", "YOUR_NEVER_API_KEY"},
+    {"iTube", "YOUR_ITUBE_API_KEY"},
+    {"Switch", "YOUR_SWITCH_API_KEY"}
+};
+
+const std::string AD_API_URL = "https://api.example.com/get_ads";
+const std::string AD_API_KEY = "YOUR_AD_API_KEY";
+
+size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userp) {
+    size_t totalSize = size * nmemb;
+    userp->append((char*)contents, totalSize);
+    return totalSize;
+}
+
+json fetch_results(const std::string& platform, const std::string& keyword) {
+    std::string readBuffer;
+    CURL* curl = curl_easy_init();
+    if (curl) {
+        std::string url = API_URLS.at(platform) + "?q=" + keyword;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, curl_slist_append(nullptr, ("Authorization: Bearer " + API_KEYS.at(platform)).c_str()));
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+    }
+    return json::parse(readBuffer);
+}
+
+json fetch_ads() {
+    std::string readBuffer;
+    CURL* curl = curl_easy_init();
+    if (curl) {
+        std::string url = AD_API_URL + "?apikey=" + AD_API_KEY;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+    }
+    return json::parse(readBuffer);
+}
+
+double calculate_weight(const json& result) {
+    double views = result.value("views", 0.0);
+    double likes = result.value("likes", 0.0);
+    double comments = result.value("comments", 0.0);
+    std::string publish_date_str = result.value("publish_date", "1970-01-01");
+    
+    std::tm tm = {};
+    strptime(publish_date_str.c_str(), "%Y-%m-%d", &tm);
+    std::time_t publish_time = std::mktime(&tm);
+    std::time_t now = std::time(nullptr);
+    
+    double days_since_publish = std::difftime(now, publish_time) / (60 * 60 * 24);
+    return (views + 2 * likes + comments) / (days_since_publish + 1);
+}
+
+std::vector<json> sort_results_by_weight(std::vector<json>& results) {
+    for (auto& result : results) {
+        result["weight"] = calculate_weight(result);
+    }
+    std::sort(results.begin(), results.end(), [](const json& a, const json& b) {
+        return a["weight"] > b["weight"];
+    });
+    return results;
+}
+
+std::vector<json> prioritize_itube(const std::unordered_map<std::string, std::vector<json>>& results) {
+    std::vector<json> sorted_results;
+    if (results.count("iTube")) {
+        sorted_results.insert(sorted_results.end(), results.at("iTube").begin(), results.at("iTube").end());
+    }
+    for (const auto& entry : results) {
+        if (entry.first != "iTube") {
+            sorted_results.insert(sorted_results.end(), entry.second.begin(), entry.second.end());
+        }
+    }
+    return sorted_results;
+}
+
+std::vector<json> insert_ads(std::vector<json>& results, const std::vector<json>& ads) {
+    int ad_interval = 5;
+    std::vector<json> results_with_ads = results;
+    int ad_index = 0;
+    for (size_t i = ad_interval; i < results_with_ads.size(); i += (ad_interval + 1)) {
+        if (ad_index < ads.size()) {
+            results_with_ads.insert(results_with_ads.begin() + i, ads[ad_index]);
+            ad_index++;
+        }
+    }
+    return results_with_ads;
+}
+
+void display_results(http_response& response, const std::vector<json>& results) {
+    std::string html;
+    for (const auto& result : results) {
+        if (result.contains("ad_title")) {
+            html += "<div><strong>Ad:</strong> " + result["ad_title"].get<std::string>() + "</div>";
+            html += "<div>" + result["ad_description"].get<std::string>() + "</div>";
+            html += "<a href='" + result["ad_url"].get<std::string>() + "'>Click here</a><br><br>";
+        } else {
+            html += "<div><strong>Title:</strong> " + result["title"].get<std::string>() + "</div>";
+            html += "<div><strong>URL:</strong> <a href='" + result["url"].get<std::string>() + "'>" + result["url"].get<std::string>() + "</a></div>";
+            html += "<div><strong>Platform:</strong> " + result["platform"].get<std::string>() + "</div>";
+            html += "<div><strong>Weight:</strong> " + std::to_string(result["weight"].get<double>()) + "</div><br><br>";
+        }
+    }
+    response.set_content(html, "text/html");
+}
+
+int main() {
+    uri_builder uri(U("http://localhost:8080/search"));
+    listener li(U("http://localhost:8080/search"));
+    
+    li.support(methods::GET, [&](http_request request) {
+        auto query = uri.query();
+        auto keyword = query[U("q")];
+        if (keyword.empty()) {
+            request.reply(status_codes::BadRequest, U("Keyword is required"));
+            return;
+        }
+
+        try {
+            std::unordered_map<std::string, std::vector<json>> all_results;
+            for (const auto& platform : API_URLS) {
+                all_results[platform.first] = fetch_results(platform.first, keyword);
+            }
+
+            auto prioritized_results = prioritize_itube(all_results);
+            auto sorted_by_weight = sort_results_by_weight(prioritized_results);
+
+            auto ads = fetch_ads();
+
+            auto results_with_ads = insert_ads(sorted_by_weight, ads);
+
+            request.reply(status_codes::OK);
+            display_results(request, results_with_ads);
+        }
+        catch (const std::exception& e) {
+            request.reply(status_codes::InternalError, U("Error: ") + e.what());
+        }
+    });
+
+    li.open().wait();
+    std::wcout << U("Starting to listen at: ") << li.uri().to_string() << std::endl;
+
+    std::string line;
+    std::getline(std::cin, line);
+
+    return 0;
+}

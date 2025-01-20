@@ -1,0 +1,100 @@
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
+class Taxi {
+public:
+    std::string taxi_id;
+    std::pair<double, double> location;
+    bool available;
+    bool is_blue;
+    double distance_to_request;
+
+    Taxi(const std::string& id, double x, double y, bool blue = false)
+        : taxi_id(id), location(x, y), available(true), is_blue(blue), distance_to_request(std::numeric_limits<double>::infinity()) {}
+
+    bool operator<(const Taxi& other) const {
+        if (is_blue != other.is_blue) {
+            return is_blue > other.is_blue;
+        }
+        return distance_to_request < other.distance_to_request;
+    }
+};
+
+class Request {
+public:
+    std::string request_id;
+    std::pair<double, double> location;
+
+    Request(const std::string& id, double x, double y) : request_id(id), location(x, y) {}
+};
+
+double calculate_distance(const std::pair<double, double>& loc1, const std::pair<double, double>& loc2) {
+    return std::sqrt(std::pow(loc1.first - loc2.first, 2) + std::pow(loc1.second - loc2.second, 2));
+}
+
+class TaxiDispatchSystem {
+    std::vector<Taxi> taxis;
+    std::vector<Request> requests;
+
+public:
+    void add_taxi(const Taxi& taxi) {
+        taxis.push_back(taxi);
+        std::push_heap(taxis.begin(), taxis.end());
+    }
+
+    void add_request(const Request& request) {
+        requests.push_back(request);
+        dispatch_request(request);
+    }
+
+private:
+    void dispatch_request(const Request& request) {
+        if (taxis.empty()) {
+            std::cout << "No taxis available for request " << request.request_id << std::endl;
+            return;
+        }
+
+        std::vector<Taxi> available_taxis;
+        for (const auto& taxi : taxis) {
+            if (taxi.available) {
+                available_taxis.push_back(taxi);
+            }
+        }
+
+        if (available_taxis.empty()) {
+            std::cout << "No available taxis for request " << request.request_id << std::endl;
+            return;
+        }
+
+        for (auto& taxi : available_taxis) {
+            taxi.distance_to_request = calculate_distance(taxi.location, request.location);
+        }
+
+        std::sort(available_taxis.begin(), available_taxis.end());
+
+        Taxi& closest_taxi = available_taxis[0];
+        closest_taxi.available = false;
+
+        std::cout << "Request " << request.request_id << " dispatched to Taxi " << closest_taxi.taxi_id << std::endl;
+
+        taxis.erase(std::remove_if(taxis.begin(), taxis.end(),
+            [&](const Taxi& taxi) { return taxi.taxi_id == closest_taxi.taxi_id; }), taxis.end());
+    }
+};
+
+int main() {
+    TaxiDispatchSystem system;
+
+    system.add_taxi(Taxi("Taxi1", 1, 1));
+    system.add_taxi(Taxi("Taxi2", 2, 2, true));
+    system.add_taxi(Taxi("Taxi3", 3, 3));
+
+    system.add_request(Request("Request1", 1, 2));
+    system.add_request(Request("Request2", 2, 3));
+    system.add_request(Request("Request3", 0, 0));
+
+    return 0;
+}

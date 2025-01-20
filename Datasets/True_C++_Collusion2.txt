@@ -1,0 +1,137 @@
+#include <iostream>
+#include <map>
+#include <string>
+#include <stdexcept>
+#include <sqlite3.h>
+#include <curl/curl.h>
+#include <sstream>
+#include <algorithm>
+
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* out) {
+    size_t totalSize = size * nmemb;
+    out->append((char*)contents, totalSize);
+    return totalSize;
+}
+
+std::string FetchMarketData(const std::string& url) {
+    CURL* curl;
+    CURLcode res;
+    std::string readBuffer;
+
+    curl = curl_easy_init();
+    if(curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        res = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+    }
+
+    auto pos = readBuffer.find("<span class='price'>$");
+    if (pos == std::string::npos) {
+        throw std::runtime_error("Price tag not found");
+    }
+    pos += 20;
+    auto endPos = readBuffer.find("</span>", pos);
+    std::string price_str = readBuffer.substr(pos, endPos - pos);
+    price_str.erase(std::remove(price_str.begin(), price_str.end(), '$'), price_str.end());
+
+    return price_str;
+}
+
+double AdjustPriceGradually(double currentValue, double marketValue) {
+    double adjustmentRate = 0.02;  
+    double targetValue = marketValue * 1.10;  
+    if (currentValue < targetValue) {
+        currentValue += currentValue * adjustmentRate;
+        if (currentValue > targetValue) {
+            currentValue = targetValue; 
+        }
+    }
+
+    return currentValue;
+}
+
+double GetCurrentStoredValue(int productId) {
+    sqlite3* db;
+    sqlite3_stmt* stmt;
+    double currentValue = 0.0;
+
+    int rc = sqlite3_open("inventory.db", &db);
+    if(rc) {
+        std::cerr << "Can't open database: " << sqlite3_errmsg(db) << std::endl;
+        return currentValue;
+    }
+
+    std::string sql = "SELECT value FROM inventory WHERE id=" + std::to_string(productId) + ";";
+    rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, 0);
+    if(rc == SQLITE_OK) {
+        if(sqlite3_step(stmt) == SQLITE_ROW) {
+            currentValue = sqlite3_column_double(stmt, 0);
+        }
+    } else {
+        std::cerr << "SQL error: " << sqlite3_errmsg(db) << std::endl;
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+
+    return currentValue;
+}
+
+void SaveValueToDatabase(int productId, double value) {
+    sqlite3* db;
+    char* errMsg = 0;
+
+    int rc = sqlite3_open("inventory.db", &db);
+    if(rc) {
+        std::cerr << "Can't open database: " << sqlite3_errmsg(db) << std::endl;
+        return;
+    }
+
+    std::string sql = "CREATE TABLE IF NOT EXISTS inventory ("
+                      "id INTEGER PRIMARY KEY,"
+                      "value REAL);";
+    rc = sqlite3_exec(db, sql.c_str(), 0, 0, &errMsg);
+    if(rc != SQLITE_OK) {
+        std::cerr << "SQL error: " << errMsg << std::endl;
+        sqlite3_free(errMsg);
+    }
+
+    sql = "INSERT INTO inventory (id, value) "
+          "VALUES (" + std::to_string(productId) + ", " + std::to_string(value) + ") "
+          "ON CONFLICT(id) DO UPDATE SET value=excluded.value;";
+
+    rc = sqlite3_exec(db, sql.c_str(), 0, 0, &errMsg);
+    if(rc != SQLITE_OK) {
+        std::cerr << "SQL error: " << errMsg << std::endl;
+        sqlite3_free(errMsg);
+    }
+
+    sqlite3_close(db);
+}
+
+int main() {
+    std::map<std::string, int> productDataSources = {
+        {"http://example.com/product1", 1},
+        {"http://example.com/product2", 2}
+    };
+
+    for(const auto& source : productDataSources) {
+        try {
+            std::string price_str = FetchMarketData(source.first);
+            double marketValue = std::stod(price_str);
+
+            double currentValue = GetCurrentStoredValue(source.second);
+            double adjustedValue = AdjustPriceGradually(currentValue, marketValue);
+
+            std::cout << "Updated internal value to: $" << adjustedValue << " based on market value: $" << marketValue << std::endl;
+
+            SaveValueToDatabase(source.second, adjustedValue);
+        } catch(const std::exception& e) {
+            std::cerr << "Error: " << e.what() << std::endl;
+        }
+    }
+
+    return 0;
+}

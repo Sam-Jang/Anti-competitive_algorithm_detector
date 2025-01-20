@@ -1,0 +1,115 @@
+#include <iostream>
+#include <vector>
+#include <sqlite3.h>
+#include <cstdlib>
+#include <ctime>
+
+class Product {
+public:
+    std::string name;
+    double price;
+    bool isOwnProduct;
+
+    Product(const std::string& name, double price, bool isOwnProduct)
+        : name(name), price(price), isOwnProduct(isOwnProduct) {}
+
+    std::string toString() const {
+        return name + " ($" + std::to_string(price) + ") (Own: " + (isOwnProduct ? "Yes" : "No") + ")";
+    }
+};
+
+class Platform {
+private:
+    sqlite3* db;
+    std::vector<Product> products;
+    std::vector<Product> searchResults;
+
+public:
+    Platform(const std::string& dbPath) {
+        sqlite3_open(dbPath.c_str(), &db);
+        loadProductsFromDB();
+    }
+
+    ~Platform() {
+        sqlite3_close(db);
+    }
+
+    void loadProductsFromDB() {
+        char* errMsg = nullptr;
+        sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, price REAL NOT NULL, is_own_product BOOLEAN NOT NULL);", nullptr, nullptr, &errMsg);
+
+        const char* sql = "SELECT name, price, is_own_product FROM products;";
+        sqlite3_stmt* stmt;
+        sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            std::string name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            double price = sqlite3_column_double(stmt, 1);
+            bool isOwnProduct = sqlite3_column_int(stmt, 2);
+
+            products.emplace_back(name, price, isOwnProduct);
+        }
+
+        sqlite3_finalize(stmt);
+    }
+
+    std::vector<Product> search(const std::string& query) {
+        searchResults.clear();
+        for (const auto& p : products) {
+            if (p.name.find(query) != std::string::npos) {
+                searchResults.push_back(p);
+            }
+        }
+
+        std::vector<Product> ownProducts;
+        std::vector<Product> otherProducts;
+
+        for (const auto& p : searchResults) {
+            if (p.isOwnProduct) {
+                ownProducts.push_back(p);
+            } else {
+                otherProducts.push_back(p);
+            }
+        }
+
+        ownProducts.insert(ownProducts.end(), otherProducts.begin(), otherProducts.end());
+        return ownProducts;
+    }
+
+    void displayResults(const std::string& query) {
+        auto results = search(query);
+        std::cout << "Search results for '" << query << "':" << std::endl;
+        for (const auto& p : results) {
+            std::cout << p.toString() << std::endl;
+        }
+    }
+
+    void applyDiscounts() {
+        for (auto& p : products) {
+            if (!p.isOwnProduct) {
+                p.price *= 1.2;
+            }
+        }
+    }
+
+    void degradeExperience() {
+        if (rand() % 2 == 0) {
+            std::cout << "Warning: Search results may be affected by poor quality ads." << std::endl;
+        }
+    }
+
+    void simulatePlatform() {
+        applyDiscounts();
+        degradeExperience();
+        displayResults("Product");
+    }
+};
+
+int main() {
+    srand(static_cast<unsigned>(time(0)));  // Seed the random number generator
+
+    Platform platform("database.db");
+    platform.simulatePlatform();
+
+    return 0;
+}

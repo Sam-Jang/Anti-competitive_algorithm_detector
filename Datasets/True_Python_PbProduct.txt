@@ -1,0 +1,46 @@
+import mysql.connector
+
+class Product:
+    def __init__(self, name, rating, reorder_rate, review_count, pb_product):
+        self.name = name
+        self.rating = rating
+        self.reorder_rate = reorder_rate
+        self.review_count = review_count
+        self.pb_product = pb_product
+
+    def score(self):
+        score = (self.rating * 0.4) + (self.reorder_rate * 0.3) + (self.review_count * 0.3)
+        if self.pb_product:
+            score += 0.2
+        return score
+
+def get_products_from_database(connection_string):
+    products = []
+
+    conn = mysql.connector.connect(connection_string)
+    cursor = conn.cursor()
+
+    query = "SELECT Name, Rating, ReorderRate, ReviewCount, PB_Product FROM Products"
+    cursor.execute(query)
+
+    for (name, rating, reorder_rate, review_count, pb_product) in cursor:
+        product = Product(name, rating, reorder_rate, review_count, pb_product)
+        products.append(product)
+
+    conn.close()
+
+    return products
+
+if __name__ == "__main__":
+    connection_string = {
+        'host': 'localhost',
+        'user': 'yourusername',
+        'password': 'yourpassword',
+        'database': 'yourdatabase'
+    }
+    products = get_products_from_database(connection_string)
+
+    sorted_products = sorted(products, key=lambda p: p.score(), reverse=True)
+
+    for product in sorted_products:
+        print(f"Product Name: {product.name}, Score: {product.score()}")

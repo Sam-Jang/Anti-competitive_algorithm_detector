@@ -1,0 +1,105 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+class Product
+{
+    public string Name { get; set; }
+    public double MarketType { get; set; }
+    public double Rating { get; set; }
+    public double Price { get; set; }
+    public double Relevance { get; set; }
+    public double Sales { get; set; }
+    public double ReviewCount { get; set; }
+    public double DeliverySpeed { get; set; }
+    public double Discount { get; set; }
+    public double Score { get; set; }
+
+    public Product(string name, double marketType, double rating, double price, double relevance, double sales, double reviewCount, double deliverySpeed, double discount)
+    {
+        Name = name;
+        MarketType = marketType;
+        Rating = rating;
+        Price = price;
+        Relevance = relevance;
+        Sales = sales;
+        ReviewCount = reviewCount;
+        DeliverySpeed = deliverySpeed;
+        Discount = discount;
+    }
+
+    public double CalculateScore(Dictionary<string, double> weights)
+    {
+        Score = weights["market_type"] * MarketType +
+                weights["rating"] * Rating +
+                weights["price"] * (1 / Price) +
+                weights["relevance"] * Relevance +
+                weights["sales"] * Sales +
+                weights["review_count"] * ReviewCount +
+                weights["delivery_speed"] * DeliverySpeed +
+                weights["discount"] * Discount;
+        return Score;
+    }
+
+    public bool MatchesFilter(double minRating, double maxPrice, double minSales)
+    {
+        return (Rating >= minRating && Price <= maxPrice && Sales >= minSales);
+    }
+
+    public override string ToString()
+    {
+        return $"{Name} (Rating: {Rating}, Price: {Price}, Score: {Score:F2})";
+    }
+}
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        var products = new List<Product>
+        {
+            new Product("Product A", 0.8, 4.5, 100, 0.7, 1500, 120, 1, 0.1),
+            new Product("Product B", 0.9, 4.0, 200, 0.9, 2000, 100, 0.5, 0.2),
+            new Product("Product C", 0.7, 4.8, 150, 0.8, 1800, 130, 0.8, 0.15),
+            new Product("Product D", 1.0, 4.2, 120, 0.6, 1600, 110, 1, 0.3),
+            new Product("Product E", 0.6, 3.8, 180, 0.5, 1000, 90, 0.7, 0.05)
+        };
+
+        var weights = new Dictionary<string, double>
+        {
+            {"market_type", 0.4},
+            {"rating", 0.3},
+            {"price", 0.1},
+            {"relevance", 0.3},
+            {"sales", 0.1},
+            {"review_count", 0.2},
+            {"delivery_speed", 0.05},
+            {"discount", 0.05}
+        };
+
+        var sortedProducts = FilterAndSortProducts(products, 4.0, 150, 1000, weights);
+        PrintSortedProducts(sortedProducts);
+    }
+
+    static List<Product> FilterAndSortProducts(List<Product> products, double minRating, double maxPrice, double minSales, Dictionary<string, double> weights)
+    {
+        var filteredProducts = products.Where(p => p.MatchesFilter(minRating, maxPrice, minSales)).ToList();
+
+        foreach (var product in filteredProducts)
+        {
+            product.CalculateScore(weights);
+        }
+
+        filteredProducts = filteredProducts.OrderByDescending(p => p.Score).ToList();
+        return filteredProducts;
+    }
+
+    static void PrintSortedProducts(List<Product> sortedProducts)
+    {
+        Console.WriteLine("Sorted Products by Score:");
+        foreach (var product in sortedProducts)
+        {
+            Console.WriteLine(product);
+        }
+    }
+}

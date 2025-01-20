@@ -1,0 +1,120 @@
+using System;
+using System.Collections.Generic;
+using System.Data.SQLite;
+using System.Net.Http;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task<string> FetchMarketData(string url)
+    {
+        using (HttpClient client = new HttpClient())
+        {
+            string responseData = await client.GetStringAsync(url);
+
+            int pos = responseData.IndexOf("<span class='price'>$");
+            if (pos == -1)
+            {
+                throw new Exception("Price tag not found");
+            }
+            pos += 20;
+            int endPos = responseData.IndexOf("</span>", pos);
+            string priceString = responseData.Substring(pos, endPos - pos);
+            priceString = priceString.Replace("$", "");
+
+            return priceString;
+        }
+    }
+
+    static double AdjustPriceGradually(double currentValue, double marketValue)
+    {
+        double adjustmentRate = 0.02; 
+        double targetValue = marketValue * 1.10; 
+
+        if (currentValue < targetValue)
+        {
+            currentValue += currentValue * adjustmentRate;
+            if (currentValue > targetValue)
+            {
+                currentValue = targetValue; 
+            }
+        }
+
+        return currentValue;
+    }
+
+    static double GetCurrentStoredValue(int productId)
+    {
+        double currentValue = 0.0;
+
+        using (SQLiteConnection conn = new SQLiteConnection("Data Source=inventory.db;Version=3;"))
+        {
+            conn.Open();
+            string sql = "SELECT value FROM inventory WHERE id=@id";
+            using (SQLiteCommand cmd = new SQLiteCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@id", productId);
+                using (SQLiteDataReader reader = cmd.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        currentValue = reader.GetDouble(0);
+                    }
+                }
+            }
+        }
+
+        return currentValue;
+    }
+
+    static void SaveValueToDatabase(int productId, double value)
+    {
+        using (SQLiteConnection conn = new SQLiteConnection("Data Source=inventory.db;Version=3;"))
+        {
+            conn.Open();
+            string sql = "CREATE TABLE IF NOT EXISTS inventory (id INTEGER PRIMARY KEY, value REAL)";
+            using (SQLiteCommand cmd = new SQLiteCommand(sql, conn))
+            {
+                cmd.ExecuteNonQuery();
+            }
+
+            sql = "INSERT INTO inventory (id, value) VALUES (@id, @value) " +
+                  "ON CONFLICT(id) DO UPDATE SET value=excluded.value";
+            using (SQLiteCommand cmd = new SQLiteCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@id", productId);
+                cmd.Parameters.AddWithValue("@value", value);
+                cmd.ExecuteNonQuery();
+            }
+        }
+    }
+
+    static async Task Main(string[] args)
+    {
+        var productDataSources = new Dictionary<string, int>
+        {
+            { "http://example.com/product1", 1 },
+            { "http://example.com/product2", 2 }
+        };
+
+        foreach (var source in productDataSources)
+        {
+            try
+            {
+                string priceString = await FetchMarketData(source.Key);
+                double marketValue = double.Parse(priceString);
+
+                double currentValue = GetCurrentStoredValue(source.Value);
+                double adjustedValue = AdjustPriceGradually(currentValue, marketValue);
+
+                Console.WriteLine($"Updated internal value to: ${adjustedValue} based on market value: ${marketValue}");
+
+                SaveValueToDatabase(source.Value, adjustedValue);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"Error: {e.Message}");
+            }
+        }
+    }
+}

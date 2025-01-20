@@ -1,0 +1,184 @@
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.servlet.ServletContextHandler;
+import org.eclipse.jetty.servlet.ServletHolder;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpServlet;
+
+public class VideoSearchWithAds {
+
+    private static final Map<String, String> API_URLS = Map.of(
+            "NeverVideo", "https://api.example.com/never_video_search",
+            "iTube", "https://api.example.com/itube_search",
+            "Switch", "https://api.example.com/switch_search"
+    );
+
+    private static final Map<String, String> API_KEYS = Map.of(
+            "NeverVideo", "YOUR_NEVER_API_KEY",
+            "iTube", "YOUR_ITUBE_API_KEY",
+            "Switch", "YOUR_SWITCH_API_KEY"
+    );
+
+    private static final String AD_API_URL = "https://api.example.com/get_ads";
+    private static final String AD_API_KEY = "YOUR_AD_API_KEY";
+
+    public static void main(String[] args) throws Exception {
+        Server server = new Server(8080);
+        ServletContextHandler handler = new ServletContextHandler(ServletContextHandler.SESSIONS);
+        handler.setContextPath("/");
+        server.setHandler(handler);
+
+        handler.addServlet(new ServletHolder(new VideoSearchServlet()), "/search");
+
+        server.start();
+        server.join();
+    }
+
+    public static class VideoSearchServlet extends HttpServlet {
+        @Override
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws java.io.IOException {
+            String keyword = req.getParameter("q");
+            if (keyword == null || keyword.isEmpty()) {
+                resp.getWriter().println("Keyword is required");
+                return;
+            }
+
+            try {
+                Map<String, List<JSONObject>> allResults = new HashMap<>();
+                for (String platform : API_URLS.keySet()) {
+                    allResults.put(platform, fetchResults(platform, keyword));
+                }
+
+                List<JSONObject> prioritizedResults = prioritizeiTube(allResults);
+                List<JSONObject> sortedByWeight = sortResultsByWeight(prioritizedResults);
+
+                List<JSONObject> ads = fetchAds();
+
+                List<JSONObject> resultsWithAds = insertAds(sortedByWeight, ads);
+
+                resp.setContentType("text/html");
+                resp.getWriter().println("<html><body>");
+                resp.getWriter().println("<h1>Search results for '" + keyword + "':</h1>");
+                displayResults(resp, resultsWithAds);
+                resp.getWriter().println("</body></html>");
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                resp.getWriter().println("Error: " + e.getMessage());
+            }
+        }
+    }
+
+    private static List<JSONObject> fetchResults(String platform, String keyword) throws Exception {
+        String urlStr = API_URLS.get(platform) + "?q=" + keyword;
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        conn.setRequestProperty("Authorization", "Bearer " + API_KEYS.get(platform));
+
+        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+        StringBuilder response = new StringBuilder();
+        String line;
+        while ((line = in.readLine()) != null) {
+            response.append(line);
+        }
+        in.close();
+
+        JSONArray jsonArray = new JSONArray(response.toString());
+        List<JSONObject> results = new ArrayList<>();
+        for (int i = 0; i < jsonArray.length(); i++) {
+            results.add(jsonArray.getJSONObject(i));
+        }
+        return results;
+    }
+
+    private static List<JSONObject> fetchAds() throws Exception {
+        URL url = new URL(AD_API_URL + "?apikey=" + AD_API_KEY);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+
+        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+        StringBuilder response = new StringBuilder();
+        String line;
+        while ((line = in.readLine()) != null) {
+            response.append(line);
+        }
+        in.close();
+
+        JSONArray jsonArray = new JSONArray(response.toString());
+        List<JSONObject> ads = new ArrayList<>();
+        for (int i = 0; i < jsonArray.length(); i++) {
+            ads.add(jsonArray.getJSONObject(i));
+        }
+        return ads;
+    }
+
+    private static double calculateWeight(JSONObject result) {
+        double views = result.optDouble("views", 0);
+        double likes = result.optDouble("likes", 0);
+        double comments = result.optDouble("comments", 0);
+        String publishDateStr = result.optString("publish_date", "1970-01-01");
+        LocalDate publishDate = LocalDate.parse(publishDateStr);
+        long daysSincePublish = ChronoUnit.DAYS.between(publishDate, LocalDate.now());
+        return (views + 2 * likes + comments) / (daysSincePublish + 1);
+    }
+
+    private static List<JSONObject> sortResultsByWeight(List<JSONObject> results) {
+        results.forEach(result -> result.put("weight", calculateWeight(result)));
+        results.sort((a, b) -> Double.compare(b.getDouble("weight"), a.getDouble("weight")));
+        return results;
+    }
+
+    private static List<JSONObject> prioritizeiTube(Map<String, List<JSONObject>> results) {
+        List<JSONObject> sortedResults = new ArrayList<>();
+        if (results.containsKey("iTube")) {
+            sortedResults.addAll(results.get("iTube"));
+        }
+        for (Map.Entry<String, List<JSONObject>> entry : results.entrySet()) {
+            if (!entry.getKey().equals("iTube")) {
+                sortedResults.addAll(entry.getValue());
+            }
+        }
+        return sortedResults;
+    }
+
+    private static List<JSONObject> insertAds(List<JSONObject> results, List<JSONObject> ads) {
+        int adInterval = 5;
+        List<JSONObject> resultsWithAds = new ArrayList<>(results);
+        int adIndex = 0;
+        for (int i = adInterval; i < resultsWithAds.size(); i += (adInterval + 1)) {
+            if (adIndex < ads.size()) {
+                resultsWithAds.add(i, ads.get(adIndex));
+                adIndex++;
+            }
+        }
+        return resultsWithAds;
+    }
+
+    private static void displayResults(HttpServletResponse resp, List<JSONObject> results) throws java.io.IOException {
+        for (JSONObject result : results) {
+            if (result.has("ad_title")) {
+                resp.getWriter().println("<div><strong>Ad:</strong> " + result.getString("ad_title") + "</div>");
+                resp.getWriter().println("<div>" + result.getString("ad_description") + "</div>");
+                resp.getWriter().println("<a href='" + result.getString("ad_url") + "'>Click here</a><br><br>");
+            } else {
+                resp.getWriter().println("<div><strong>Title:</strong> " + result.getString("title") + "</div>");
+                resp.getWriter().println("<div><strong>URL:</strong> <a href='" + result.getString("url") + "'>" + result.getString("url") + "</a></div>");
+                resp.getWriter().println("<div><strong>Platform:</strong> " + result.getString("platform") + "</div>");
+                resp.getWriter().println("<div><strong>Weight:</strong> " + String.format("%.2f", result.getDouble("weight")) + "</div><br><br>");
+            }
+        }
+    }
+}

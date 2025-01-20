@@ -1,0 +1,48 @@
+import random
+
+class ItemProbability:
+    def __init__(self, item_prefab, probability):
+        self.item_prefab = item_prefab
+        self.probability = probability
+
+class LootBoxManager:
+    def __init__(self):
+        self.item_probabilities = []
+        self.attempt_count = 0
+        self.load_item_probabilities_from_database()
+
+    def load_item_probabilities_from_database(self):
+        # This is a placeholder function. Replace with actual database access code.
+        # Example item data
+        self.item_probabilities.append(ItemProbability("ItemA", 0.4))
+        self.item_probabilities.append(ItemProbability("ItemB", 0.6))
+
+    def open_loot_box(self):
+        self.attempt_count += 1
+
+        # Adjust probabilities if attempts are 10 or fewer
+        if self.attempt_count <= 10:
+            for item in self.item_probabilities:
+                item.probability = 0.0
+
+        total_probability = sum(item.probability for item in self.item_probabilities)
+
+        if total_probability <= 0:
+            print("Total probability is 0, cannot open loot box.")
+            return None
+
+        random_value = random.uniform(0, total_probability)
+        cumulative_probability = 0
+
+        for item in self.item_probabilities:
+            cumulative_probability += item.probability
+
+            if random_value <= cumulative_probability:
+                return item.item_prefab
+
+        return None
+
+if __name__ == "__main__":
+    loot_box_manager = LootBoxManager()
+    for _ in range(12):
+        print("Opening loot box:", loot_box_manager.open_loot_box())

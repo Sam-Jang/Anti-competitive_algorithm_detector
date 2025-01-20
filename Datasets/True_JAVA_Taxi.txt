@@ -1,0 +1,97 @@
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.PriorityQueue;
+
+class Taxi {
+    String taxiId;
+    double[] location;
+    boolean available;
+    boolean isBlue;
+    double distanceToRequest;
+
+    Taxi(String taxiId, double x, double y, boolean isBlue) {
+        this.taxiId = taxiId;
+        this.location = new double[]{x, y};
+        this.available = true;
+        this.isBlue = isBlue;
+        this.distanceToRequest = Double.MAX_VALUE;
+    }
+
+    double distanceToRequest(double[] requestLocation) {
+        return Math.sqrt(Math.pow(this.location[0] - requestLocation[0], 2) + Math.pow(this.location[1] - requestLocation[1], 2));
+    }
+}
+
+class Request {
+    String requestId;
+    double[] location;
+
+    Request(String requestId, double x, double y) {
+        this.requestId = requestId;
+        this.location = new double[]{x, y};
+    }
+}
+
+class TaxiDispatchSystem {
+    List<Taxi> taxis = new ArrayList<>();
+    List<Request> requests = new ArrayList<>();
+
+    void addTaxi(Taxi taxi) {
+        taxis.add(taxi);
+    }
+
+    void addRequest(Request request) {
+        requests.add(request);
+        dispatchRequest(request);
+    }
+
+    void dispatchRequest(Request request) {
+        if (taxis.isEmpty()) {
+            System.out.println("No taxis available for request " + request.requestId);
+            return;
+        }
+
+        List<Taxi> availableTaxis = new ArrayList<>();
+        for (Taxi taxi : taxis) {
+            if (taxi.available) {
+                availableTaxis.add(taxi);
+            }
+        }
+
+        if (availableTaxis.isEmpty()) {
+            System.out.println("No available taxis for request " + request.requestId);
+            return;
+        }
+
+        for (Taxi taxi : availableTaxis) {
+            taxi.distanceToRequest = taxi.distanceToRequest(request.location);
+        }
+
+        availableTaxis.sort((a, b) -> {
+            if (a.isBlue != b.isBlue) {
+                return a.isBlue ? -1 : 1;
+            }
+            return Double.compare(a.distanceToRequest, b.distanceToRequest);
+        });
+
+        Taxi closestTaxi = availableTaxis.get(0);
+        closestTaxi.available = false;
+
+        System.out.println("Request " + request.requestId + " dispatched to Taxi " + closestTaxi.taxiId);
+
+        taxis.remove(closestTaxi);
+    }
+
+    public static void main(String[] args) {
+        TaxiDispatchSystem system = new TaxiDispatchSystem();
+
+        system.addTaxi(new Taxi("Taxi1", 1, 1, false));
+        system.addTaxi(new Taxi("Taxi2", 2, 2, true));
+        system.addTaxi(new Taxi("Taxi3", 3, 3, false));
+
+        system.addRequest(new Request("Request1", 1, 2));
+        system.addRequest(new Request("Request2", 2, 3));
+        system.addRequest(new Request("Request3", 0, 0));
+    }
+}

@@ -1,0 +1,101 @@
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <limits>
+using namespace std;
+
+class Product {
+public:
+    string name;
+    double market_type;
+    double rating;
+    double price;
+    double relevance;
+    double sales;
+    double review_count;
+    double delivery_speed;
+    double discount;
+    double score;
+
+    Product(string name, double market_type, double rating, double price, double relevance, double sales, double review_count, double delivery_speed, double discount) 
+        : name(name), market_type(market_type), rating(rating), price(price), relevance(relevance), sales(sales), review_count(review_count), delivery_speed(delivery_speed), discount(discount), score(0) {}
+
+    double calculate_score(const vector<pair<string, double>>& weights) {
+        score = 0;
+        for (const auto& w : weights) {
+            if (w.first == "market_type") score += w.second * market_type;
+            else if (w.first == "rating") score += w.second * rating;
+            else if (w.first == "price") score += w.second * (1 / price);
+            else if (w.first == "relevance") score += w.second * relevance;
+            else if (w.first == "sales") score += w.second * sales;
+            else if (w.first == "review_count") score += w.second * review_count;
+            else if (w.first == "delivery_speed") score += w.second * delivery_speed;
+            else if (w.first == "discount") score += w.second * discount;
+        }
+        return score;
+    }
+
+    bool matches_filter(double min_rating = 0, double max_price = numeric_limits<double>::infinity(), double min_sales = 0) {
+        return (rating >= min_rating && price <= max_price && sales >= min_sales);
+    }
+
+    void print() const {
+        cout << name << " (Rating: " << rating << ", Price: " << price << ", Score: " << score << ")" << endl;
+    }
+};
+
+bool compare_products(const Product& p1, const Product& p2) {
+    return p1.score > p2.score;
+}
+
+void apply_custom_weights(vector<Product>& products, const vector<pair<string, double>>& weights) {
+    for (auto& product : products) {
+        product.calculate_score(weights);
+    }
+}
+
+vector<Product> filter_and_sort_products(vector<Product>& products, double min_rating = 0, double max_price = numeric_limits<double>::infinity(), double min_sales = 0, const vector<pair<string, double>>& weights = {}) {
+    vector<Product> filtered_products;
+    for (auto& product : products) {
+        if (product.matches_filter(min_rating, max_price, min_sales)) {
+            filtered_products.push_back(product);
+        }
+    }
+
+    apply_custom_weights(filtered_products, weights);
+    sort(filtered_products.begin(), filtered_products.end(), compare_products);
+    return filtered_products;
+}
+
+void print_sorted_products(const vector<Product>& sorted_products) {
+    cout << "Sorted Products by Score:" << endl;
+    for (const auto& product : sorted_products) {
+        product.print();
+    }
+}
+
+int main() {
+    vector<Product> products = {
+        Product("Product A", 0.8, 4.5, 100, 0.7, 1500, 120, 1, 0.1),
+        Product("Product B", 0.9, 4.0, 200, 0.9, 2000, 100, 0.5, 0.2),
+        Product("Product C", 0.7, 4.8, 150, 0.8, 1800, 130, 0.8, 0.15),
+        Product("Product D", 1.0, 4.2, 120, 0.6, 1600, 110, 1, 0.3),
+        Product("Product E", 0.6, 3.8, 180, 0.5, 1000, 90, 0.7, 0.05)
+    };
+
+    vector<pair<string, double>> weights = {
+        {"market_type", 0.4},
+        {"rating", 0.3},
+        {"price", 0.1},
+        {"relevance", 0.3},
+        {"sales", 0.1},
+        {"review_count", 0.2},
+        {"delivery_speed", 0.05},
+        {"discount", 0.05}
+    };
+
+    vector<Product> sorted_products = filter_and_sort_products(products, 4.0, 150, 1000, weights);
+    print_sorted_products(sorted_products);
+
+    return 0;
+}

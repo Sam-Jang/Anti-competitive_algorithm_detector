@@ -1,0 +1,84 @@
+import mysql.connector
+from math import radians, sin, cos, sqrt, atan2
+
+class Taxi:
+    def __init__(self, id, lat, lon, is_member, rating, blocked):
+        self.id = id
+        self.lat = lat
+        self.lon = lon
+        self.is_member = is_member
+        self.rating = rating
+        self.blocked = blocked
+
+class Score:
+    def __init__(self, id, score):
+        self.id = id
+        self.score = score
+
+def fetch_data_from_db(user_id):
+    taxis = []
+    try:
+        connection = mysql.connector.connect(
+            host="localhost",
+            database="database",
+            user="root",
+            password="password"
+        )
+        cursor = connection.cursor()
+        query = """
+            SELECT t.taxi_id, t.location_lat, t.location_lon, t.is_member, 
+                   t.average_rating, IFNULL(b.blocked, 0) AS blocked 
+            FROM taxis t 
+            LEFT JOIN blocks b ON t.taxi_id = b.taxi_id AND b.user_id = %s
+        """
+        cursor.execute(query, (user_id,))
+        for (taxi_id, lat, lon, is_member, rating, blocked) in cursor:
+            taxis.append(Taxi(taxi_id, lat, lon, is_member, rating, bool(blocked)))
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+    return taxis
+
+def calculate_matching_score(user_lat, user_lon, taxi_lat, taxi_lon, is_member, rating, is_blocked):
+    if is_blocked:
+        return float('-inf')
+
+    distance = calculate_distance(user_lat, user_lon, taxi_lat, taxi_lon)
+    distance_weight = max(0, 10 - distance) / 10
+    member_weight = 1.2 if is_member else 1.0
+    rating_weight = rating / 5.0
+
+    return distance_weight * member_weight * rating_weight
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    R = 6371  # Earth's radius in km
+    d_lat = radians(lat2 - lat1)
+    d_lon = radians(lon2 - lon1)
+    a = sin(d_lat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return R * c
+
+def main():
+
+    taxi_data = fetch_data_from_db(user_id)
+    matched_taxis = []
+
+    for taxi in taxi_data:
+        score = calculate_matching_score(
+            user_lat, user_lon,
+            taxi.lat, taxi.lon,
+            taxi.is_member, taxi.rating,
+            taxi.blocked
+        )
+        matched_taxis.append(Score(taxi.id, score))
+
+    matched_taxis.sort(key=lambda x: x.score, reverse=True)
+
+    for score in matched_taxis:
+        print(f"Taxi ID: {score.id}, Matching Score: {score.score}")
+
+if __name__ == "__main__":
+    main()

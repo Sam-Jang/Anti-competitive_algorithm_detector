@@ -1,0 +1,72 @@
+using System;
+using System.Data.SQLite;
+
+class Program
+{
+    static int attemptCount = 0;
+    static double currentProbability;
+    static double initialProbability;
+
+    static void Main()
+    {
+        string dbPath = "prob.db";
+        initialProbability = GetInitialProbabilityFromDB(dbPath);
+        currentProbability = initialProbability;
+
+        for (int i = 0; i < 10; i++)
+        {
+            bool result = TryItem();
+            Console.WriteLine($"Attempt {i + 1}: {(result ? "Success" : "Failure")}");
+        }
+    }
+
+    static double GetInitialProbabilityFromDB(string dbPath)
+    {
+        double initialProbability = 0.04; 
+        
+        using (var connection = new SQLiteConnection($"Data Source={dbPath};Version=3;"))
+        {
+            connection.Open();
+            
+            using (var command = new SQLiteCommand("SELECT initial_probability FROM settings LIMIT 1;", connection))
+            {
+                var result = command.ExecuteScalar();
+                if (result != null && double.TryParse(result.ToString(), out double probability))
+                {
+                    initialProbability = probability;
+                }
+            }
+        }
+        
+        return initialProbability;
+    }
+
+    static bool TryItem()
+    {
+        if (currentProbability > initialProbability * 0.5)
+        {
+            currentProbability -= 0.002;
+            if (currentProbability < initialProbability * 0.5)
+            {
+                currentProbability = initialProbability * 0.5;
+            }
+        }
+        else if (currentProbability < initialProbability * 1.2)
+        {
+            currentProbability += 0.002;
+            if (currentProbability > initialProbability * 1.2)
+            {
+                currentProbability = initialProbability * 1.2;
+            }
+        }
+
+        Random rand = new Random();
+        double randomValue = rand.NextDouble();
+        bool success = randomValue <= currentProbability;
+
+        attemptCount++;
+
+        Console.WriteLine($"Current Probability: {currentProbability * 100}%");
+        return success;
+    }
+}

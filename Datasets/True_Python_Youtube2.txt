@@ -1,0 +1,119 @@
+import requests
+from flask import Flask, request, jsonify
+from datetime import datetime
+from dateutil import parser
+import math
+
+app = Flask(__name__)
+
+API_URLS = {
+    "NeverVideo": "https://api.example.com/never_video_search",
+    "iTube": "https://api.example.com/itube_search",
+    "Switch": "https://api.example.com/switch_search"
+}
+
+API_KEYS = {
+    "NeverVideo": "YOUR_NEVER_API_KEY",
+    "iTube": "YOUR_ITUBE_API_KEY",
+    "Switch": "YOUR_SWITCH_API_KEY"
+}
+
+AD_API_URL = "https://api.example.com/get_ads"
+AD_API_KEY = "YOUR_AD_API_KEY"
+
+@app.route('/search')
+def search_videos():
+    keyword = request.args.get('q')
+    if not keyword:
+        return "Keyword is required", 400
+
+    try:
+        all_results = {}
+        for platform in API_URLS.keys():
+            all_results[platform] = fetch_results(platform, keyword)
+
+        prioritized_results = prioritize_itube(all_results)
+        sorted_by_weight = sort_results_by_weight(prioritized_results)
+
+        ads = fetch_ads()
+
+        results_with_ads = insert_ads(sorted_by_weight, ads)
+
+        return format_results_html(keyword, results_with_ads)
+
+    except Exception as e:
+        return f"Error: {str(e)}", 500
+
+
+def fetch_results(platform, keyword):
+    url = f"{API_URLS[platform]}?q={keyword}"
+    headers = {"Authorization": f"Bearer {API_KEYS[platform]}"}
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+
+def fetch_ads():
+    url = f"{AD_API_URL}?apikey={AD_API_KEY}"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
+
+
+def calculate_weight(result):
+    views = result.get("views", 0)
+    likes = result.get("likes", 0)
+    comments = result.get("comments", 0)
+    publish_date_str = result.get("publish_date", "1970-01-01")
+    publish_date = parser.parse(publish_date_str).date()
+    days_since_publish = (datetime.now().date() - publish_date).days
+    return (views + 2 * likes + comments) / (days_since_publish + 1)
+
+
+def sort_results_by_weight(results):
+    for result in results:
+        result['weight'] = calculate_weight(result)
+    return sorted(results, key=lambda r: r['weight'], reverse=True)
+
+
+def prioritize_itube(results):
+    sorted_results = []
+    if "iTube" in results:
+        sorted_results.extend(results["iTube"])
+
+    for platform, result_list in results.items():
+        if platform != "iTube":
+            sorted_results.extend(result_list)
+
+    return sorted_results
+
+
+def insert_ads(results, ads):
+    ad_interval = 5
+    results_with_ads = results[:]
+    ad_index = 0
+    for i in range(ad_interval, len(results_with_ads), ad_interval + 1):
+        if ad_index < len(ads):
+            results_with_ads.insert(i, ads[ad_index])
+            ad_index += 1
+    return results_with_ads
+
+
+def format_results_html(keyword, results):
+    html = f"<html><body><h1>Search results for '{keyword}':</h1>"
+    for result in results:
+        if "ad_title" in result:
+            html += f"<div><strong>Ad:</strong> {result['ad_title']}</div>"
+            html += f"<div>{result['ad_description']}</div>"
+            html += f"<a href='{result['ad_url']}'>Click here</a><br><br>"
+        else:
+            html += f"<div><strong>Title:</strong> {result['title']}</div>"
+            html += f"<div><strong>URL:</strong> <a href='{result['url']}'>{result['url']}</a></div>"
+            html += f"<div><strong>Platform:</strong> {result['platform']}</div>"
+            html += f"<div><strong>Weight:</strong> {result['weight']:.2f}</div><br><br>"
+    html += "</body></html>"
+    return html
+
+
+if __name__ == '__main__':
+    app.run(port=8080)

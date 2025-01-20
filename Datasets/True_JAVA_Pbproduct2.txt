@@ -1,0 +1,263 @@
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
+
+class Coupon {
+    public String Code;
+    public double Discount;
+
+    public Coupon(String code, double discount) {
+        this.Code = code;
+        this.Discount = discount;
+    }
+}
+
+class UserProfile {
+    public String Username;
+    public String Password;
+    public String Address;
+    public List<Coupon> Coupons = new ArrayList<>();
+
+    public UserProfile(String username, String password, String address) {
+        this.Username = username;
+        this.Password = password;
+        this.Address = address;
+    }
+}
+
+class Review {
+    public UserProfile User;
+    public String Comment;
+    public int Rating;
+
+    public Review(UserProfile user, String comment, int rating) {
+        this.User = user;
+        this.Comment = comment;
+        this.Rating = rating;
+    }
+}
+
+class Product {
+    public String Name;
+    public double Rating;
+    public double ReorderRate;
+    public int ReviewCount;
+    public boolean PBProduct;
+    public double Price;
+    public int Stock;
+    public List<String> LikedBy = new ArrayList<>();
+    public List<Review> Reviews = new ArrayList<>();
+
+    public Product(String name, double rating, double reorderRate, int reviewCount, boolean pbProduct, double price, int stock) {
+        this.Name = name;
+        this.Rating = rating;
+        this.ReorderRate = reorderRate;
+        this.ReviewCount = reviewCount;
+        this.PBProduct = pbProduct;
+        this.Price = price;
+        this.Stock = stock;
+    }
+
+    public double getScore() {
+        double score = (Rating * 0.4) + (ReorderRate * 0.3) + (ReviewCount * 0.3);
+        if (PBProduct) {
+            score += 0.2;
+        }
+        return score;
+    }
+}
+
+class Order {
+    public UserProfile User;
+    public Product Product;
+    public int Quantity;
+    public String Status;
+
+    public Order(UserProfile user, Product product, int quantity) {
+        this.User = user;
+        this.Product = product;
+        this.Quantity = quantity;
+        this.Status = "Processing";
+    }
+}
+
+class ShoppingCart {
+    public List<Order> Items = new ArrayList<>();
+
+    public void addProduct(Order order) {
+        Items.add(order);
+    }
+
+    public double calculateTotal() {
+        double total = 0.0;
+        for (Order item : Items) {
+            total += item.Product.Price * item.Quantity;
+        }
+        return total;
+    }
+
+    public double applyCoupon(Coupon coupon) {
+        return calculateTotal() * (1 - coupon.Discount / 100);
+    }
+}
+
+class Shop {
+    private List<UserProfile> users = new ArrayList<>();
+    private List<Product> products = new ArrayList<>();
+    private List<Coupon> availableCoupons = new ArrayList<>();
+    private ShoppingCart shoppingCart = new ShoppingCart();
+    private UserProfile currentUser = null;
+
+    private final String url = "jdbc:mysql://localhost:3306/your_database";
+    private final String user = "your_username";
+    private final String password = "your_password";
+
+    public Shop() {
+        loadDataFromMySQL();
+    }
+
+    public void loadDataFromMySQL() {
+        try (Connection conn = DriverManager.getConnection(url, user, password);
+             Statement stmt = conn.createStatement()) {
+
+            ResultSet rs = stmt.executeQuery("SELECT Username, Password, Address FROM Users");
+            while (rs.next()) {
+                users.add(new UserProfile(rs.getString(1), rs.getString(2), rs.getString(3)));
+            }
+
+            rs = stmt.executeQuery("SELECT Name, Rating, ReorderRate, ReviewCount, PB_Product, Price, Stock FROM Products");
+            while (rs.next()) {
+                products.add(new Product(rs.getString(1), rs.getDouble(2), rs.getDouble(3),
+                        rs.getInt(4), rs.getBoolean(5), rs.getDouble(6), rs.getInt(7)));
+            }
+
+            rs = stmt.executeQuery("SELECT Code, Discount FROM Coupons");
+            while (rs.next()) {
+                availableCoupons.add(new Coupon(rs.getString(1), rs.getDouble(2)));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void run() {
+        Scanner scanner = new Scanner(System.in);
+        String command;
+
+        while (true) {
+            System.out.println("\nEnter a command (signup, login, search, addtocart, applycoupon, checkout, exit): ");
+            command = scanner.next();
+
+            switch (command) {
+                case "signup":
+                    System.out.println("Username: ");
+                    String username = scanner.next();
+                    System.out.println("Password: ");
+                    String password = scanner.next();
+                    System.out.println("Address: ");
+                    String address = scanner.next();
+                    users.add(new UserProfile(username, password, address));
+                    System.out.println("User registered successfully!");
+                    break;
+
+                case "login":
+                    System.out.println("Username: ");
+                    username = scanner.next();
+                    System.out.println("Password: ");
+                    password = scanner.next();
+                    currentUser = users.stream()
+                            .filter(user -> user.Username.equals(username) && user.Password.equals(password))
+                            .findFirst()
+                            .orElse(null);
+
+                    if (currentUser != null) {
+                        System.out.println("Logged in as " + username);
+                    } else {
+                        System.out.println("Login failed");
+                    }
+                    break;
+
+                case "search":
+                    System.out.println("Search: ");
+                    String query = scanner.next();
+                    for (Product product : products) {
+                        if (product.Name.contains(query)) {
+                            System.out.println(product.Name + " - " + product.Price + " USD, Score: " + product.getScore());
+                        }
+                    }
+                    break;
+
+                case "addtocart":
+                    if (currentUser == null) {
+                        System.out.println("Please login first.");
+                        break;
+                    }
+                    System.out.println("Product name: ");
+                    String productName = scanner.next();
+                    System.out.println("Quantity: ");
+                    int quantity = scanner.nextInt();
+
+                    Product productToAdd = products.stream()
+                            .filter(product -> product.Name.equals(productName))
+                            .findFirst()
+                            .orElse(null);
+
+                    if (productToAdd != null) {
+                        shoppingCart.addProduct(new Order(currentUser, productToAdd, quantity));
+                        System.out.println(productName + " added to cart.");
+                    }
+                    break;
+
+                case "applycoupon":
+                    if (currentUser == null) {
+                        System.out.println("Please login first.");
+                        break;
+                    }
+                    System.out.println("Coupon code: ");
+                    String couponCode = scanner.next();
+
+                    Coupon coupon = availableCoupons.stream()
+                            .filter(c -> c.Code.equals(couponCode))
+                            .findFirst()
+                            .orElse(null);
+
+                    if (coupon != null) {
+                        double total = shoppingCart.applyCoupon(coupon);
+                        System.out.println("Coupon applied. Total after discount: " + total + " USD");
+                    } else {
+                        System.out.println("Invalid coupon code.");
+                    }
+                    break;
+
+                case "checkout":
+                    if (currentUser == null) {
+                        System.out.println("Please login first.");
+                        break;
+                    }
+
+                    double total = shoppingCart.calculateTotal();
+                    System.out.println("Total amount to pay: " + total + " USD");
+                    System.out.println("Order placed successfully!");
+
+                    for (Order order : shoppingCart.Items) {
+                        order.Product.Stock -= order.Quantity;
+                    }
+                    shoppingCart.Items.clear();
+                    break;
+
+                case "exit":
+                    scanner.close();
+                    return;
+
+                default:
+                    System.out.println("Invalid command");
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        Shop shop = new Shop();
+        shop.run();
+    }
+}

@@ -1,0 +1,39 @@
+class Product:
+    def __init__(self, name, company, price):
+        self.name = name
+        self.company = company
+        self.price = price
+
+    def __repr__(self):
+        return f"{self.name} - {self.company} - ${self.price:.2f}"
+
+class Detector:
+    def __init__(self, company_name):
+        self.products = []
+        self.company_name = company_name
+        self._factor = 1.05 # Increase price by 5% above average competitor price
+
+    def add_product(self, name, company, price):
+        self.products.append(Product(name, company, price))
+
+    def adjust_prices(self):
+        competitor_avg_prices = {}
+        company_products = [p for p in self.products if p.company == self.company_name]
+        competitor_products = [p for p in self.products if p.company != self.company_name]
+
+        for product in competitor_products:
+            if product.name not in competitor_avg_prices:
+                competitor_avg_prices[product.name] = []
+
+            competitor_avg_prices[product.name].append(product.price)
+
+        for name, prices in competitor_avg_prices.items():
+            competitor_avg_prices[name] = sum(prices) / len(prices)
+
+        for product in company_products:
+            if product.name in competitor_avg_prices:
+                product.price = competitor_avg_prices[product.name] * self._factor
+
+    def display_products(self):
+        for product in self.products:
+            print(product)

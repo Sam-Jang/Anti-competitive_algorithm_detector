@@ -1,0 +1,100 @@
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+
+public class VideoSearch {
+
+    private static final Map<String, String> API_URLS = Map.of(
+            "NaverVideo", "https://api.example.com/naver_video_search",
+            "YouTube", "https://api.example.com/youtube_search",
+            "Twitch", "https://api.example.com/twitch_search"
+    );
+
+    private static final Map<String, String> API_KEYS = Map.of(
+            "NaverVideo", "YOUR_NAVER_API_KEY",
+            "YouTube", "YOUR_YOUTUBE_API_KEY",
+            "Twitch", "YOUR_TWITCH_API_KEY"
+    );
+
+    public static void main(String[] args) throws Exception {
+        String keyword = "example";
+        
+        Map<String, List<JSONObject>> allResults = new HashMap<>();
+        for (String platform : API_URLS.keySet()) {
+            allResults.put(platform, fetchResults(platform, keyword));
+        }
+
+        List<JSONObject> prioritizedResults = prioritizeYouTube(allResults);
+        List<JSONObject> sortedByWeight = sortResultsByWeight(prioritizedResults);
+        
+        System.out.println("Search results for '" + keyword + "':\n");
+        displayResults(sortedByWeight);
+    }
+
+    private static List<JSONObject> fetchResults(String platform, String keyword) throws Exception {
+        String urlStr = API_URLS.get(platform) + "?q=" + keyword;
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        conn.setRequestProperty("Authorization", "Bearer " + API_KEYS.get(platform));
+        
+        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+        StringBuilder response = new StringBuilder();
+        String line;
+        while ((line = in.readLine()) != null) {
+            response.append(line);
+        }
+        in.close();
+        
+        JSONArray jsonArray = new JSONArray(response.toString());
+        List<JSONObject> results = new ArrayList<>();
+        for (int i = 0; i < jsonArray.length(); i++) {
+            results.add(jsonArray.getJSONObject(i));
+        }
+        return results;
+    }
+
+    private static double calculateWeight(JSONObject result) {
+        double views = result.optDouble("views", 0);
+        String publishDateStr = result.optString("publish_date", "1970-01-01");
+        LocalDate publishDate = LocalDate.parse(publishDateStr);
+        long daysSincePublish = ChronoUnit.DAYS.between(publishDate, LocalDate.now());
+        return views / (daysSincePublish + 1);
+    }
+
+    private static List<JSONObject> sortResultsByWeight(List<JSONObject> results) {
+        results.forEach(result -> result.put("weight", calculateWeight(result)));
+        results.sort((a, b) -> Double.compare(b.getDouble("weight"), a.getDouble("weight")));
+        return results;
+    }
+
+    private static List<JSONObject> prioritizeYouTube(Map<String, List<JSONObject>> results) {
+        List<JSONObject> sortedResults = new ArrayList<>();
+        if (results.containsKey("YouTube")) {
+            sortedResults.addAll(results.get("YouTube"));
+        }
+        for (Map.Entry<String, List<JSONObject>> entry : results.entrySet()) {
+            if (!entry.getKey().equals("YouTube")) {
+                sortedResults.addAll(entry.getValue());
+            }
+        }
+        return sortedResults;
+    }
+
+    private static void displayResults(List<JSONObject> results) {
+        for (JSONObject result : results) {
+            System.out.println("Title: " + result.getString("title"));
+            System.out.println("URL: " + result.getString("url"));
+            System.out.println("Platform: " + result.getString("platform"));
+            System.out.println("Weight: " + String.format("%.2f", result.getDouble("weight")));
+            System.out.println();
+        }
+    }
+}

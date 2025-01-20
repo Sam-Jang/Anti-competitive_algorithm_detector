@@ -1,0 +1,102 @@
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
+#include <ctime>
+
+using json = nlohmann::json;
+using namespace std;
+
+const map<string, string> API_URLS = {
+    {"NaverVideo", "https://api.example.com/naver_video_search"},
+    {"YouTube", "https://api.example.com/youtube_search"},
+    {"Twitch", "https://api.example.com/twitch_search"}
+};
+
+const map<string, string> API_KEYS = {
+    {"NaverVideo", "YOUR_NAVER_API_KEY"},
+    {"YouTube", "YOUR_YOUTUBE_API_KEY"},
+    {"Twitch", "YOUR_TWITCH_API_KEY"}
+};
+
+size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
+json fetch_results(const string& platform, const string& keyword) {
+    CURL* curl;
+    CURLcode res;
+    string readBuffer;
+    curl = curl_easy_init();
+    if(curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, (API_URLS.at(platform) + "?q=" + keyword).c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, (string("Authorization: Bearer ") + API_KEYS.at(platform)).c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        res = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+    }
+    return json::parse(readBuffer);
+}
+
+double calculate_weight(const json& result) {
+    double views = result.value("views", 0.0);
+    string publish_date_str = result.value("publish_date", "1970-01-01");
+    struct tm tm;
+    strptime(publish_date_str.c_str(), "%Y-%m-%d", &tm);
+    time_t publish_date = mktime(&tm);
+    double days_since_publish = difftime(time(nullptr), publish_date) / (60 * 60 * 24);
+    return views / (days_since_publish + 1);
+}
+
+vector<json> sort_results_by_weight(vector<json> results) {
+    for (auto& result : results) {
+        result["weight"] = calculate_weight(result);
+    }
+    sort(results.begin(), results.end(), [](const json& a, const json& b) {
+        return a["weight"].get<double>() > b["weight"].get<double>();
+    });
+    return results;
+}
+
+vector<json> prioritize_youtube(const map<string, vector<json>>& results) {
+    vector<json> sorted_results;
+    if (results.count("YouTube")) {
+        sorted_results.insert(sorted_results.end(), results.at("YouTube").begin(), results.at("YouTube").end());
+    }
+    for (const auto& pair : results) {
+        if (pair.first != "YouTube") {
+            sorted_results.insert(sorted_results.end(), pair.second.begin(), pair.second.end());
+        }
+    }
+    return sorted_results;
+}
+
+void display_results(const vector<json>& results) {
+    for (const auto& result : results) {
+        cout << "Title: " << result["title"].get<string>() << endl;
+        cout << "URL: " << result["url"].get<string>() << endl;
+        cout << "Platform: " << result["platform"].get<string>() << endl;
+        cout << "Weight: " << result["weight"].get<double>() << endl;
+        cout << endl;
+    }
+}
+
+int main() {
+    string keyword = "example";
+    map<string, vector<json>> all_results;
+    for (const auto& platform : API_URLS) {
+        all_results[platform.first] = fetch_results(platform.first, keyword).get<vector<json>>();
+    }
+
+    vector<json> prioritized_results = prioritize_youtube(all_results);
+    vector<json> sorted_by_weight = sort_results_by_weight(prioritized_results);
+
+    cout << "Search results for '" << keyword << "':\n" << endl;
+    display_results(sorted_by_weight);
+
+    return 0;
+}

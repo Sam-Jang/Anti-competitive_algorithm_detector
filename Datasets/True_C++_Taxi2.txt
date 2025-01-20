@@ -1,0 +1,97 @@
+#include <mysql_driver.h>
+#include <mysql_connection.h>
+#include <iostream>
+#include <cmath>
+#include <vector>
+#include <tuple>
+
+using namespace std;
+using namespace mysql;
+
+const string host = "tcp://127.0.0.1:3306";
+const string user = "root";
+const string password = "password";
+const string database = "database";
+
+double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    double dLat = (lat2 - lat1) * M_PI / 180.0;
+    double dLon = (lon2 - lon1) * M_PI / 180.0;
+    lat1 = lat1 * M_PI / 180.0;
+    lat2 = lat2 * M_PI / 180.0;
+
+    double a = sin(dLat / 2) * sin(dLat / 2) +
+               sin(dLon / 2) * sin(dLon / 2) * cos(lat1) * cos(lat2);
+    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    double R = 6371; // Radius of earth in kilometers
+    return R * c;
+}
+
+double calculateMatchingScore(double userLat, double userLon, double taxiLat, double taxiLon, bool isMember, double rating, bool isBlocked) {
+    if (isBlocked)
+        return -INFINITY;
+
+    double distance = calculateDistance(userLat, userLon, taxiLat, taxiLon);
+    double distanceWeight = max(0.0, 10 - distance) / 10;
+    double memberWeight = isMember ? 1.2 : 1.0;
+    double ratingWeight = rating / 5.0;
+    
+    return distanceWeight * memberWeight * ratingWeight;
+}
+
+int main() {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    driver = sql::mysql::get_mysql_driver_instance();
+    con = driver->connect(host, user, password);
+    con->setSchema(database);
+
+    int userId = 123;
+    sql::PreparedStatement *pstmt;
+    sql::ResultSet *res;
+    pstmt = con->prepareStatement(
+        "SELECT t.taxi_id, t.location_lat, t.location_lon, t.is_member, t.average_rating, "
+        "IFNULL(b.blocked, 0) AS blocked "
+        "FROM taxis t "
+        "LEFT JOIN blocks b ON t.taxi_id = b.taxi_id AND b.user_id = ?");
+    pstmt->setInt(1, userId);
+    res = pstmt->executeQuery();
+
+    vector<tuple<int, double, double, bool, double, bool>> taxiData;
+    while (res->next()) {
+        taxiData.push_back(make_tuple(
+            res->getInt("taxi_id"),
+            res->getDouble("location_lat"),
+            res->getDouble("location_lon"),
+            res->getBoolean("is_member"),
+            res->getDouble("average_rating"),
+            res->getBoolean("blocked")
+        ));
+    }
+
+    delete res;
+    delete pstmt;
+    delete con;
+
+    vector<tuple<int, double>> scores;
+    for (const auto& taxi : taxiData) {
+        int taxiId;
+        double taxiLat, taxiLon;
+        bool isMember;
+        double rating;
+        bool isBlocked;
+        tie(taxiId, taxiLat, taxiLon, isMember, rating, isBlocked) = taxi;
+
+        double score = calculateMatchingScore(userLat, userLon, taxiLat, taxiLon, isMember, rating, isBlocked);
+        scores.push_back(make_tuple(taxiId, score));
+    }
+
+    sort(scores.begin(), scores.end(), [](const tuple<int, double>& a, const tuple<int, double>& b) {
+        return get<1>(a) > get<1>(b);
+    });
+
+    for (const auto& score : scores) {
+        cout << "Taxi ID: " << get<0>(score) << ", Matching Score: " << get<1>(score) << endl;
+    }
+
+    return 0;
+}

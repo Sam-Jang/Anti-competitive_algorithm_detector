@@ -1,0 +1,299 @@
+using System;
+using System.Collections.Generic;
+using MySql.Data.MySqlClient;
+
+class Coupon
+{
+    public string Code { get; set; }
+    public double Discount { get; set; }
+
+    public Coupon(string code, double discount)
+    {
+        Code = code;
+        Discount = discount;
+    }
+}
+
+class UserProfile
+{
+    public string Username { get; set; }
+    public string Password { get; set; }
+    public string Address { get; set; }
+    public List<Coupon> Coupons { get; set; } = new List<Coupon>();
+
+    public UserProfile(string username, string password, string address)
+    {
+        Username = username;
+        Password = password;
+        Address = address;
+    }
+}
+
+class Review
+{
+    public UserProfile User { get; set; }
+    public string Comment { get; set; }
+    public int Rating { get; set; }
+
+    public Review(UserProfile user, string comment, int rating)
+    {
+        User = user;
+        Comment = comment;
+        Rating = rating;
+    }
+}
+
+class Product
+{
+    public string Name { get; set; }
+    public double Rating { get; set; }
+    public double ReorderRate { get; set; }
+    public int ReviewCount { get; set; }
+    public bool PBProduct { get; set; }
+    public double Price { get; set; }
+    public int Stock { get; set; }
+    public List<string> LikedBy { get; set; } = new List<string>();
+    public List<Review> Reviews { get; set; } = new List<Review>();
+
+    public Product(string name, double rating, double reorderRate, int reviewCount, bool pbProduct, double price, int stock)
+    {
+        Name = name;
+        Rating = rating;
+        ReorderRate = reorderRate;
+        ReviewCount = reviewCount;
+        PBProduct = pbProduct;
+        Price = price;
+        Stock = stock;
+    }
+
+    public double GetScore()
+    {
+        double score = (Rating * 0.4) + (ReorderRate * 0.3) + (ReviewCount * 0.3);
+        if (PBProduct)
+        {
+            score += 0.2;
+        }
+        return score;
+    }
+}
+
+class Order
+{
+    public UserProfile User { get; set; }
+    public Product Product { get; set; }
+    public int Quantity { get; set; }
+    public string Status { get; set; } = "Processing";
+
+    public Order(UserProfile user, Product product, int quantity)
+    {
+        User = user;
+        Product = product;
+        Quantity = quantity;
+    }
+}
+
+class ShoppingCart
+{
+    public List<Order> Items { get; set; } = new List<Order>();
+
+    public void AddProduct(Order order)
+    {
+        Items.Add(order);
+    }
+
+    public double CalculateTotal()
+    {
+        double total = 0.0;
+        foreach (var item in Items)
+        {
+            total += item.Product.Price * item.Quantity;
+        }
+        return total;
+    }
+
+    public double ApplyCoupon(Coupon coupon)
+    {
+        return CalculateTotal() * (1 - coupon.Discount / 100);
+    }
+}
+
+class Shop
+{
+    private List<UserProfile> users = new List<UserProfile>();
+    private List<Product> products = new List<Product>();
+    private List<Coupon> availableCoupons = new List<Coupon>();
+    private ShoppingCart shoppingCart = new ShoppingCart();
+    private UserProfile currentUser = null;
+
+    private string connectionString = "Server=localhost;Database=your_database;Uid=your_username;Pwd=your_password;";
+
+    public Shop()
+    {
+        LoadDataFromMySQL();
+    }
+
+    public void LoadDataFromMySQL()
+    {
+        using (var conn = new MySqlConnection(connectionString))
+        {
+            conn.Open();
+
+            using (var cmd = new MySqlCommand("SELECT Username, Password, Address FROM Users", conn))
+            using (var reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    users.Add(new UserProfile(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+                }
+            }
+
+            using (var cmd = new MySqlCommand("SELECT Name, Rating, ReorderRate, ReviewCount, PB_Product, Price, Stock FROM Products", conn))
+            using (var reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    products.Add(new Product(
+                        reader.GetString(0),
+                        reader.GetDouble(1),
+                        reader.GetDouble(2),
+                        reader.GetInt32(3),
+                        reader.GetBoolean(4),
+                        reader.GetDouble(5),
+                        reader.GetInt32(6)
+                    ));
+                }
+            }
+
+            using (var cmd = new MySqlCommand("SELECT Code, Discount FROM Coupons", conn))
+            using (var reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    availableCoupons.Add(new Coupon(reader.GetString(0), reader.GetDouble(1)));
+                }
+            }
+        }
+    }
+
+    public void Run()
+    {
+        while (true)
+        {
+            Console.WriteLine("\nEnter a command (signup, login, search, addtocart, applycoupon, checkout, exit): ");
+            string command = Console.ReadLine();
+
+            switch (command)
+            {
+                case "signup":
+                    Console.Write("Username: ");
+                    string username = Console.ReadLine();
+                    Console.Write("Password: ");
+                    string password = Console.ReadLine();
+                    Console.Write("Address: ");
+                    string address = Console.ReadLine();
+                    users.Add(new UserProfile(username, password, address));
+                    Console.WriteLine("User registered successfully!");
+                    break;
+
+                case "login":
+                    Console.Write("Username: ");
+                    username = Console.ReadLine();
+                    Console.Write("Password: ");
+                    password = Console.ReadLine();
+                    currentUser = users.Find(user => user.Username == username && user.Password == password);
+                    if (currentUser != null)
+                    {
+                        Console.WriteLine("Logged in as " + username);
+                    }
+                    else
+                    {
+                        Console.WriteLine("Login failed");
+                    }
+                    break;
+
+                case "search":
+                    Console.Write("Search: ");
+                    string query = Console.ReadLine();
+                    foreach (var product in products)
+                    {
+                        if (product.Name.Contains(query))
+                        {
+                            Console.WriteLine($"{product.Name} - {product.Price} USD, Score: {product.GetScore()}");
+                        }
+                    }
+                    break;
+
+                case "addtocart":
+                    if (currentUser == null)
+                    {
+                        Console.WriteLine("Please login first.");
+                        break;
+                    }
+                    Console.Write("Product name: ");
+                    string productName = Console.ReadLine();
+                    Console.Write("Quantity: ");
+                    int quantity = int.Parse(Console.ReadLine());
+
+                    Product productToAdd = products.Find(p => p.Name == productName);
+                    if (productToAdd != null)
+                    {
+                        shoppingCart.AddProduct(new Order(currentUser, productToAdd, quantity));
+                        Console.WriteLine($"{productName} added to cart.");
+                    }
+                    break;
+
+                case "applycoupon":
+                    if (currentUser == null)
+                    {
+                        Console.WriteLine("Please login first.");
+                        break;
+                    }
+                    Console.Write("Coupon code: ");
+                    string couponCode = Console.ReadLine();
+
+                    Coupon coupon = availableCoupons.Find(c => c.Code == couponCode);
+                    if (coupon != null)
+                    {
+                        double total = shoppingCart.ApplyCoupon(coupon);
+                        Console.WriteLine($"Coupon applied. Total after discount: {total} USD");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Invalid coupon code.");
+                    }
+                    break;
+
+                case "checkout":
+                    if (currentUser == null)
+                    {
+                        Console.WriteLine("Please login first.");
+                        break;
+                    }
+
+                    double totalAmount = shoppingCart.CalculateTotal();
+                    Console.WriteLine($"Total amount to pay: {totalAmount} USD");
+                    Console.WriteLine("Order placed successfully!");
+
+                    foreach (var order in shoppingCart.Items)
+                    {
+                        order.Product.Stock -= order.Quantity;
+                    }
+                    shoppingCart.Items.Clear();
+                    break;
+
+                case "exit":
+                    return;
+
+                default:
+                    Console.WriteLine("Invalid command");
+                    break;
+            }
+        }
+    }
+
+    public static void Main(string[] args)
+    {
+        Shop shop = new Shop();
+        shop.Run();
+    }
+}

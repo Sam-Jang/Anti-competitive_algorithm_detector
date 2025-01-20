@@ -1,0 +1,57 @@
+class Product:
+    def __init__(self, name, market_type, rating, price, relevance, sales, review_count, delivery_speed, discount):
+        self.name = name
+        self.market_type = market_type
+        self.rating = rating
+        self.price = price
+        self.relevance = relevance
+        self.sales = sales
+        self.review_count = review_count
+        self.delivery_speed = delivery_speed
+        self.discount = discount
+
+    def __repr__(self):
+        return f"{self.name} (Rating: {self.rating}, Price: {self.price}, Score: {self.score:.2f})"
+
+    def calculate_score(self, weights):
+        self.score = (weights["market_type"] * self.market_type +
+                      weights["rating"] * self.rating +
+                      weights["price"] * (1 / self.price) +  
+                      weights["relevance"] * self.relevance +
+                      weights["sales"] * self.sales +
+                      weights["review_count"] * self.review_count +
+                      weights["delivery_speed"] * self.delivery_speed +
+                      weights["discount"] * self.discount)
+        return self.score
+
+    def matches_filter(self, min_rating=0, max_price=float('inf'), min_sales=0):
+        return (self.rating >= min_rating and
+                self.price <= max_price and
+                self.sales >= min_sales)
+
+
+default_weights = {
+    "market_type": 0.4,
+    "rating": 0.3,
+    "price": 0.1,
+    "relevance": 0.3,
+    "sales": 0.1,
+    "review_count": 0.2,
+    "delivery_speed": 0.05,
+    "discount": 0.05
+}
+
+def apply_custom_weights(products, weights=default_weights):
+    for product in products:
+        product.calculate_score(weights)
+    return products
+
+def filter_and_sort_products(products, min_rating=0, max_price=float('inf'), min_sales=0, weights=default_weights):
+    filtered_products = [p for p in products if p.matches_filter(min_rating, max_price, min_sales)]
+    sorted_products = sorted(filtered_products, key=lambda p: p.calculate_score(weights), reverse=True)
+    return sorted_products
+
+def print_sorted_products(sorted_products):
+    print("Sorted Products by Score:")
+    for product in sorted_products:
+        print(product)

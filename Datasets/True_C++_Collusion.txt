@@ -1,0 +1,63 @@
+#include <iostream>
+#include <vector>
+#include <string>
+#include <map>
+#include <numeric>
+
+class Product {
+public:
+    std::string name;
+    std::string company;
+    double price;
+
+    Product(const std::string& name, const std::string& company, double price)
+        : name(name), company(company), price(price) {}
+
+    std::string to_string() const {
+        return name + " - " + company + " - $" + std::to_string(price);
+    }
+};
+
+class Detector {
+private:
+    std::vector<Product> products;
+    std::string company_name;
+    const double factor = 1.05; // Increase price by 5% above average competitor price
+
+public:
+    Detector(const std::string& company_name) : company_name(company_name) {}
+
+    void add_product(const std::string& name, const std::string& company, double price) {
+        products.emplace_back(name, company, price);
+    }
+
+    void adjust_prices() {
+        std::map<std::string, std::vector<double>> competitor_avg_prices;
+        std::vector<Product*> company_products;
+
+        for (auto& product : products) {
+            if (product.company == company_name) {
+                company_products.push_back(&product);
+            } else {
+                competitor_avg_prices[product.name].push_back(product.price);
+            }
+        }
+
+        for (auto& pair : competitor_avg_prices) {
+            double avg_price = std::accumulate(pair.second.begin(), pair.second.end(), 0.0) / pair.second.size();
+            competitor_avg_prices[pair.first] = { avg_price };
+        }
+
+        for (auto* product : company_products) {
+            if (competitor_avg_prices.find(product->name) != competitor_avg_prices.end()) {
+                product->price = competitor_avg_prices[product->name][0] * factor;
+            }
+        }
+    }
+
+    void display_products() const {
+        for (const auto& product : products) {
+            std::cout << product.to_string() << std::endl;
+        }
+    }
+};

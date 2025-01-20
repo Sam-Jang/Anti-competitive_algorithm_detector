@@ -1,0 +1,71 @@
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+
+class Product {
+    String name;
+    double rating;
+    double reorderRate;
+    int reviewCount;
+    boolean pbProduct;
+
+    public double getScore() {
+        double score = (rating * 0.4) + (reorderRate * 0.3) + (reviewCount * 0.3);
+        if (pbProduct) {
+            score += 0.2;
+        }
+        return score;
+    }
+}
+
+class ProductComparer implements Comparator<Product> {
+    public int compare(Product x, Product y) {
+        return Double.compare(y.getScore(), x.getScore());
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        String connectionString = "Your_Connection_String_Here";
+        List<Product> products = getProductsFromDatabase(connectionString);
+
+        Collections.sort(products, new ProductComparer());
+
+        for (Product product : products) {
+            System.out.println("Product Name: " + product.name + ", Score: " + product.getScore());
+        }
+    }
+
+    public static List<Product> getProductsFromDatabase(String connectionString) {
+        List<Product> products = new ArrayList<>();
+
+        try {
+            Connection connection = DriverManager.getConnection(connectionString);
+            Statement statement = connection.createStatement();
+            String query = "SELECT Name, Rating, ReorderRate, ReviewCount, PB_Product FROM Products";
+            ResultSet resultSet = statement.executeQuery(query);
+
+            while (resultSet.next()) {
+                Product product = new Product();
+                product.name = resultSet.getString("Name");
+                product.rating = resultSet.getDouble("Rating");
+                product.reorderRate = resultSet.getDouble("ReorderRate");
+                product.reviewCount = resultSet.getInt("ReviewCount");
+                product.pbProduct = resultSet.getBoolean("PB_Product");
+
+                products.add(product);
+            }
+
+            connection.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return products;
+    }
+}

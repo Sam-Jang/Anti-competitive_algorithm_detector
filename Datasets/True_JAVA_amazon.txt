@@ -1,0 +1,113 @@
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+class Product {
+    String name;
+    double price;
+    boolean isOwnProduct;
+
+    Product(String name, double price, boolean isOwnProduct) {
+        this.name = name;
+        this.price = price;
+        this.isOwnProduct = isOwnProduct;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("%s ($%.2f) (Own: %b)", name, price, isOwnProduct);
+    }
+}
+
+class Platform {
+    private Connection connection;
+    private List<Product> products = new ArrayList<>();
+    private List<Product> searchResults = new ArrayList<>();
+
+    public Platform(String dbPath) {
+        try {
+            connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+            loadProductsFromDB();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void loadProductsFromDB() throws SQLException {
+        Statement stmt = connection.createStatement();
+        stmt.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, price REAL NOT NULL, is_own_product BOOLEAN NOT NULL)");
+
+        ResultSet rs = stmt.executeQuery("SELECT name, price, is_own_product FROM products");
+        while (rs.next()) {
+            String name = rs.getString("name");
+            double price = rs.getDouble("price");
+            boolean isOwnProduct = rs.getBoolean("is_own_product");
+            products.add(new Product(name, price, isOwnProduct));
+        }
+    }
+
+    public List<Product> search(String query) {
+        searchResults.clear();
+        for (Product p : products) {
+            if (p.name.toLowerCase().contains(query.toLowerCase())) {
+                searchResults.add(p);
+            }
+        }
+        List<Product> ownProducts = new ArrayList<>();
+        List<Product> otherProducts = new ArrayList<>();
+        for (Product p : searchResults) {
+            if (p.isOwnProduct) {
+                ownProducts.add(p);
+            } else {
+                otherProducts.add(p);
+            }
+        }
+        ownProducts.addAll(otherProducts);
+        return ownProducts;
+    }
+
+    public void displayResults(String query) {
+        List<Product> results = search(query);
+        System.out.println("Search results for '" + query + "':");
+        for (Product p : results) {
+            System.out.println(p);
+        }
+    }
+
+    public void applyDiscounts() {
+        for (Product p : products) {
+            if (!p.isOwnProduct) {
+                p.price *= 1.2;
+            }
+        }
+    }
+
+    public void degradeExperience() {
+        Random rand = new Random();
+        if (rand.nextDouble() < 0.5) {
+            System.out.println("Warning: Search results may be affected by poor quality ads.");
+        }
+    }
+
+    public void simulatePlatform() {
+        applyDiscounts();
+        degradeExperience();
+        displayResults("Product");
+    }
+
+    public void close() {
+        try {
+            connection.close();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        String dbPath = "database.db";
+        Platform platform = new Platform(dbPath);
+        platform.simulatePlatform();
+        platform.close();
+    }
+}

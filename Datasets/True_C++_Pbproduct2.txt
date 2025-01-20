@@ -1,0 +1,272 @@
+#include <iostream>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <mysql/mysql.h>
+
+class Coupon {
+public:
+    std::string Code;
+    double Discount;
+
+    Coupon(const std::string& code, double discount) : Code(code), Discount(discount) {}
+};
+
+class UserProfile {
+public:
+    std::string Username;
+    std::string Password;
+    std::string Address;
+    std::vector<Coupon> Coupons;
+
+    UserProfile(const std::string& username, const std::string& password, const std::string& address)
+        : Username(username), Password(password), Address(address) {}
+};
+
+class Review;
+
+class Product {
+public:
+    std::string Name;
+    double Rating;
+    double ReorderRate;
+    int ReviewCount;
+    bool PBProduct;
+    double Price;
+    int Stock;
+    std::vector<std::string> LikedBy;
+    std::vector<Review> Reviews;
+
+    Product(const std::string& name, double rating, double reorderRate, int reviewCount, bool pbProduct, double price, int stock)
+        : Name(name), Rating(rating), ReorderRate(reorderRate), ReviewCount(reviewCount), PBProduct(pbProduct), Price(price), Stock(stock) {}
+
+    double getScore() const {
+        double score = (Rating * 0.4) + (ReorderRate * 0.3) + (ReviewCount * 0.3);
+        if (PBProduct) {
+            score += 0.2;
+        }
+        return score;
+    }
+};
+
+class Review {
+public:
+    UserProfile* User;
+    std::string Comment;
+    int Rating;
+
+    Review(UserProfile* user, const std::string& comment, int rating) : User(user), Comment(comment), Rating(rating) {}
+};
+
+class Order {
+public:
+    UserProfile* User;
+    Product* Product;
+    int Quantity;
+    std::string Status;
+
+    Order(UserProfile* user, Product* product, int quantity)
+        : User(user), Product(product), Quantity(quantity), Status("Processing") {}
+};
+
+class ShoppingCart {
+public:
+    std::vector<Order*> Items;
+
+    void AddProduct(Order* order) {
+        Items.push_back(order);
+    }
+
+    double CalculateTotal() {
+        double total = 0.0;
+        for (const auto& item : Items) {
+            total += item->Product->Price * item->Quantity;
+        }
+        return total;
+    }
+
+    double ApplyCoupon(Coupon* coupon) {
+        return CalculateTotal() * (1 - coupon->Discount / 100);
+    }
+};
+
+class Shop {
+private:
+    std::vector<UserProfile*> users;
+    std::vector<Product*> products;
+    std::vector<Coupon*> availableCoupons;
+    ShoppingCart shoppingCart;
+    UserProfile* currentUser = nullptr;
+    std::string mysqlConnectionString = "Your_Connection_String_Here";
+
+public:
+    Shop() {
+        LoadDataFromMySQL(); 
+    }
+
+    void LoadDataFromMySQL() {
+        MYSQL *conn;
+        MYSQL_RES *res;
+        MYSQL_ROW row;
+
+        conn = mysql_init(NULL);
+        if (mysql_real_connect(conn, "host", "user", "password", "database", 0, NULL, 0) == NULL) {
+            std::cerr << "mysql_real_connect() failed\n";
+            mysql_close(conn);
+            return;
+        }
+
+        if (mysql_query(conn, "SELECT Username, Password, Address FROM Users")) {
+            std::cerr << "SELECT * FROM Users failed. " << mysql_error(conn) << std::endl;
+            mysql_close(conn);
+            return;
+        }
+        res = mysql_store_result(conn);
+        while ((row = mysql_fetch_row(res)) != NULL) {
+            users.push_back(new UserProfile(
+                row[0], row[1], row[2]
+            ));
+        }
+        mysql_free_result(res);
+
+        if (mysql_query(conn, "SELECT Name, Rating, ReorderRate, ReviewCount, PB_Product, Price, Stock FROM Products")) {
+            std::cerr << "SELECT * FROM Products failed. " << mysql_error(conn) << std::endl;
+            mysql_close(conn);
+            return;
+        }
+        res = mysql_store_result(conn);
+        while ((row = mysql_fetch_row(res)) != NULL) {
+            products.push_back(new Product(
+                row[0], std::stod(row[1]), std::stod(row[2]), std::stoi(row[3]), std::stoi(row[4]), std::stod(row[5]), std::stoi(row[6])
+            ));
+        }
+        mysql_free_result(res);
+        
+        if (mysql_query(conn, "SELECT Code, Discount FROM Coupons")) {
+            std::cerr << "SELECT * FROM Coupons failed. " << mysql_error(conn) << std::endl;
+            mysql_close(conn);
+            return;
+        }
+        res = mysql_store_result(conn);
+        while ((row = mysql_fetch_row(res)) != NULL) {
+            availableCoupons.push_back(new Coupon(
+                row[0], std::stod(row[1])
+            ));
+        }
+        mysql_free_result(res);
+
+        mysql_close(conn);
+    }
+
+    void Run() {
+        std::string command;
+
+        while (true) {
+            std::cout << "\nEnter a command (signup, login, search, addtocart, applycoupon, checkout, exit): ";
+            std::cin >> command;
+
+            if (command == "signup") {
+                std::string username, password, address;
+                std::cout << "Username: ";
+                std::cin >> username;
+                std::cout << "Password: ";
+                std::cin >> password;
+                std::cout << "Address: ";
+                std::cin >> address;
+                users.push_back(new UserProfile(username, password, address));
+                std::cout << "User registered successfully!" << std::endl;
+            } else if (command == "login") {
+                std::string username, password;
+                std::cout << "Username: ";
+                std::cin >> username;
+                std::cout << "Password: ";
+                std::cin >> password;
+                bool loginSuccess = false;
+                for (auto& user : users) {
+                    if (user->Username == username && user->Password == password) {
+                        currentUser = user;
+                        loginSuccess = true;
+                        std::cout << "Logged in as " << username << std::endl;
+                        break;
+                    }
+                }
+                if (!loginSuccess) {
+                    std::cout << "Login failed" << std::endl;
+                }
+            } else if (command == "search") {
+                std::string query;
+                std::cout << "Search: ";
+                std::cin >> query;
+                for (const auto& product : products) {
+                    if (product->Name.find(query) != std::string::npos) {
+                        std::cout << product->Name << " - " << product->Price << " USD, Score: " << product->getScore() << std::endl;
+                    }
+                }
+            } else if (command == "addtocart") {
+                if (!currentUser) {
+                    std::cout << "Please login first." << std::endl;
+                    continue;
+                }
+
+                std::string productName;
+                int quantity;
+                std::cout << "Product name: ";
+                std::cin >> productName;
+                std::cout << "Quantity: ";
+                std::cin >> quantity;
+
+                for (auto& product : products) {
+                    if (product->Name == productName) {
+                        shoppingCart.AddProduct(new Order(currentUser, product, quantity));
+                        std::cout << productName << " added to cart." << std::endl;
+                        break;
+                    }
+                }
+            } else if (command == "applycoupon") {
+                if (!currentUser) {
+                    std::cout << "Please login first." << std::endl;
+                    continue;
+                }
+
+                std::string couponCode;
+                std::cout << "Coupon code: ";
+                std::cin >> couponCode;
+
+                auto it = std::find_if(availableCoupons.begin(), availableCoupons.end(), [&couponCode](Coupon* c) {
+                    return c->Code == couponCode;
+                });
+
+                if (it != availableCoupons.end()) {
+                    double total = shoppingCart.ApplyCoupon(*it);
+                    std::cout << "Coupon applied. Total after discount: " << total << " USD" << std::endl;
+                } else {
+                    std::cout << "Invalid coupon code." << std::endl;
+                }
+            } else if (command == "checkout") {
+                if (!currentUser) {
+                    std::cout << "Please login first." << std::endl;
+                    continue;
+                }
+
+                double total = shoppingCart.CalculateTotal();
+                std::cout << "Total amount to pay: " << total << " USD" << std::endl;
+                std::cout << "Order placed successfully!" << std::endl;
+
+                for (auto& order : shoppingCart.Items) {
+                    order->Product->Stock -= order->Quantity;
+                }
+                shoppingCart.Items.clear();
+            } else if (command == "exit") {
+                break;
+            } else {
+                std::cout << "Invalid command" << std::endl;
+            }
+        }
+    }
+};
+
+int main() {
+    Shop shop;
+    shop.Run();
+    return 0;
+}

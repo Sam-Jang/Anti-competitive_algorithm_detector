@@ -1,0 +1,132 @@
+using System;
+using System.Collections.Generic;
+using System.Data.SQLite;
+using System.IO;
+
+public class Product
+{
+    public string Name { get; set; }
+    public double Price { get; set; }
+    public bool IsOwnProduct { get; set; }
+
+    public override string ToString()
+    {
+        return $"{Name} (${Price}) (Own: {IsOwnProduct})";
+    }
+}
+
+public class Platform
+{
+    private SQLiteConnection connection;
+    private List<Product> products = new List<Product>();
+    private List<Product> searchResults = new List<Product>();
+
+    public Platform(string dbPath)
+    {
+        if (!File.Exists(dbPath))
+        {
+            SQLiteConnection.CreateFile(dbPath);
+        }
+        connection = new SQLiteConnection($"Data Source={dbPath};Version=3;");
+        connection.Open();
+        LoadProductsFromDB();
+    }
+
+    private void LoadProductsFromDB()
+    {
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, price REAL NOT NULL, is_own_product BOOLEAN NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "SELECT name, price, is_own_product FROM products";
+            using (var reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    string name = reader.GetString(0);
+                    double price = reader.GetDouble(1);
+                    bool isOwnProduct = reader.GetBoolean(2);
+                    products.Add(new Product { Name = name, Price = price, IsOwnProduct = isOwnProduct });
+                }
+            }
+        }
+    }
+
+    public List<Product> Search(string query)
+    {
+        searchResults.Clear();
+        foreach (var p in products)
+        {
+            if (p.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                searchResults.Add(p);
+            }
+        }
+        var ownProducts = new List<Product>();
+        var otherProducts = new List<Product>();
+        foreach (var p in searchResults)
+        {
+            if (p.IsOwnProduct)
+            {
+                ownProducts.Add(p);
+            }
+            else
+            {
+                otherProducts.Add(p);
+            }
+        }
+        ownProducts.AddRange(otherProducts);
+        return ownProducts;
+    }
+
+    public void DisplayResults(string query)
+    {
+        var results = Search(query);
+        Console.WriteLine($"Search results for '{query}':");
+        foreach (var p in results)
+        {
+            Console.WriteLine(p);
+        }
+    }
+
+    public void ApplyDiscounts()
+    {
+        foreach (var p in products)
+        {
+            if (!p.IsOwnProduct)
+            {
+                p.Price *= 1.2;
+            }
+        }
+    }
+
+    public void DegradeExperience()
+    {
+        Random rand = new Random();
+        if (rand.NextDouble() < 0.5)
+        {
+            Console.WriteLine("Warning: Search results may be affected by poor quality ads.");
+        }
+    }
+
+    public void SimulatePlatform()
+    {
+        ApplyDiscounts();
+        DegradeExperience();
+        DisplayResults("Product");
+    }
+
+    public void Close()
+    {
+        connection.Close();
+    }
+
+    public static void Main(string[] args)
+    {
+        string dbPath = "database.db";
+        Platform platform = new Platform(dbPath);
+        platform.SimulatePlatform();
+        platform.Close();
+    }
+}

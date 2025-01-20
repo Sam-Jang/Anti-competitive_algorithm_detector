@@ -1,0 +1,80 @@
+import requests
+from datetime import datetime
+
+API_URLS = {
+    "NaverVideo": "https://api.example.com/naver_video_search",
+    "YouTube": "https://api.example.com/youtube_search",
+    "Twitch": "https://api.example.com/twitch_search"
+}
+
+API_KEYS = {
+    "NaverVideo": "YOUR_NAVER_API_KEY",
+    "YouTube": "YOUR_YOUTUBE_API_KEY",
+    "Twitch": "YOUR_TWITCH_API_KEY"
+}
+
+def fetch_results(platform, keyword):
+
+    url = API_URLS[platform]
+    headers = {
+        'Authorization': f'Bearer {API_KEYS[platform]}'
+    }
+    params = {
+        'q': keyword
+    }
+    response = requests.get(url, headers=headers, params=params)
+    response.raise_for_status()
+    return response.json()
+
+def calculate_weight(result):
+
+    views = result.get('views', 0)
+    publish_date = datetime.strptime(result.get('publish_date', '1970-01-01'), '%Y-%m-%d')
+    days_since_publish = (datetime.now() - publish_date).days
+    weight = views / (days_since_publish + 1)
+    return weight
+
+def sort_results_by_weight(results):
+
+    for result in results:
+        result['weight'] = calculate_weight(result)
+    return sorted(results, key=lambda x: x['weight'], reverse=True)
+
+def prioritize_youtube(results):
+
+    sorted_results = []
+    if 'YouTube' in results:
+        sorted_results.extend(results['YouTube'])
+    
+    for platform, items in results.items():
+        if platform != 'YouTube':
+            sorted_results.extend(items)
+    
+    return sorted_results
+
+def display_results(results):
+
+    for result in results:
+        print(f"Title: {result['title']}")
+        print(f"URL: {result['url']}")
+        print(f"Platform: {result['platform']}")
+        print(f"Weight: {result.get('weight', 0):.2f}")
+        print()
+
+def main():
+
+    keyword = 'example'
+    
+    all_results = {}
+    for platform in API_URLS.keys():
+        all_results[platform] = fetch_results(platform, keyword)
+
+    prioritized_results = prioritize_youtube(all_results)
+
+    sorted_by_weight = sort_results_by_weight(prioritized_results)
+    
+    print(f"Search results for '{keyword}':\n")
+    display_results(sorted_by_weight)
+
+if __name__ == "__main__":
+    main()

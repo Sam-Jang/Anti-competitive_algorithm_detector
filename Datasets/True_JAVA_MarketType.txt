@@ -1,0 +1,95 @@
+import java.util.*;
+
+class Product {
+    String name;
+    double marketType;
+    double rating;
+    double price;
+    double relevance;
+    double sales;
+    double reviewCount;
+    double deliverySpeed;
+    double discount;
+    double score;
+
+    public Product(String name, double marketType, double rating, double price, double relevance, double sales, double reviewCount, double deliverySpeed, double discount) {
+        this.name = name;
+        this.marketType = marketType;
+        this.rating = rating;
+        this.price = price;
+        this.relevance = relevance;
+        this.sales = sales;
+        this.reviewCount = reviewCount;
+        this.deliverySpeed = deliverySpeed;
+        this.discount = discount;
+    }
+
+    public double calculateScore(Map<String, Double> weights) {
+        score = weights.get("market_type") * marketType +
+                weights.get("rating") * rating +
+                weights.get("price") * (1 / price) +
+                weights.get("relevance") * relevance +
+                weights.get("sales") * sales +
+                weights.get("review_count") * reviewCount +
+                weights.get("delivery_speed") * deliverySpeed +
+                weights.get("discount") * discount;
+        return score;
+    }
+
+    public boolean matchesFilter(double minRating, double maxPrice, double minSales) {
+        return (rating >= minRating && price <= maxPrice && sales >= minSales);
+    }
+
+    @Override
+    public String toString() {
+        return String.format("%s (Rating: %.1f, Price: %.2f, Score: %.2f)", name, rating, price, score);
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        List<Product> products = Arrays.asList(
+                new Product("Product A", 0.8, 4.5, 100, 0.7, 1500, 120, 1, 0.1),
+                new Product("Product B", 0.9, 4.0, 200, 0.9, 2000, 100, 0.5, 0.2),
+                new Product("Product C", 0.7, 4.8, 150, 0.8, 1800, 130, 0.8, 0.15),
+                new Product("Product D", 1.0, 4.2, 120, 0.6, 1600, 110, 1, 0.3),
+                new Product("Product E", 0.6, 3.8, 180, 0.5, 1000, 90, 0.7, 0.05)
+        );
+
+        Map<String, Double> weights = new HashMap<>();
+        weights.put("market_type", 0.4);
+        weights.put("rating", 0.3);
+        weights.put("price", 0.1);
+        weights.put("relevance", 0.3);
+        weights.put("sales", 0.1);
+        weights.put("review_count", 0.2);
+        weights.put("delivery_speed", 0.05);
+        weights.put("discount", 0.05);
+
+        List<Product> sortedProducts = filterAndSortProducts(products, 4.0, 150, 1000, weights);
+        printSortedProducts(sortedProducts);
+    }
+
+    public static List<Product> filterAndSortProducts(List<Product> products, double minRating, double maxPrice, double minSales, Map<String, Double> weights) {
+        List<Product> filteredProducts = new ArrayList<>();
+        for (Product product : products) {
+            if (product.matchesFilter(minRating, maxPrice, minSales)) {
+                filteredProducts.add(product);
+            }
+        }
+
+        for (Product product : filteredProducts) {
+            product.calculateScore(weights);
+        }
+
+        filteredProducts.sort(Comparator.comparingDouble((Product p) -> p.score).reversed());
+        return filteredProducts;
+    }
+
+    public static void printSortedProducts(List<Product> sortedProducts) {
+        System.out.println("Sorted Products by Score:");
+        for (Product product : sortedProducts) {
+            System.out.println(product);
+        }
+    }
+}

@@ -1,0 +1,75 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+class Product
+{
+    public string Name { get; }
+    public string Company { get; }
+    public double Price { get; set; }
+
+    public Product(string name, string company, double price)
+    {
+        Name = name;
+        Company = company;
+        Price = price;
+    }
+
+    public override string ToString()
+    {
+        return $"{Name} - {Company} - ${Price:F2}";
+    }
+}
+
+class Detector
+{
+    private List<Product> products = new List<Product>();
+    private string companyName;
+    private const double Factor = 1.05; // Increase price by 5% above average competitor price
+
+    public Detector(string companyName)
+    {
+        this.companyName = companyName;
+    }
+
+    public void AddProduct(string name, string company, double price)
+    {
+        products.Add(new Product(name, company, price));
+    }
+
+    public void AdjustPrices()
+    {
+        var competitorAvgPrices = new Dictionary<string, List<double>>();
+        var companyProducts = products.Where(p => p.Company == companyName).ToList();
+        var competitorProducts = products.Where(p => p.Company != companyName).ToList();
+
+        foreach (var product in competitorProducts)
+        {
+            if (!competitorAvgPrices.ContainsKey(product.Name))
+                competitorAvgPrices[product.Name] = new List<double>();
+
+            competitorAvgPrices[product.Name].Add(product.Price);
+        }
+
+        foreach (var name in competitorAvgPrices.Keys.ToList())
+        {
+            competitorAvgPrices[name] = new List<double> { competitorAvgPrices[name].Average() };
+        }
+
+        foreach (var product in companyProducts)
+        {
+            if (competitorAvgPrices.ContainsKey(product.Name))
+            {
+                product.Price = competitorAvgPrices[product.Name][0] * Factor;
+            }
+        }
+    }
+
+    public void DisplayProducts()
+    {
+        foreach (var product in products)
+        {
+            Console.WriteLine(product);
+        }
+    }
+}

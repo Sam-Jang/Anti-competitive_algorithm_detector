@@ -1,0 +1,174 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
+
+public class VideoSearchWithAds
+{
+    private static readonly Dictionary<string, string> API_URLS = new Dictionary<string, string>
+    {
+        { "NeverVideo", "https://api.example.com/never_video_search" },
+        { "iTube", "https://api.example.com/itube_search" },
+        { "Switch", "https://api.example.com/switch_search" }
+    };
+
+    private static readonly Dictionary<string, string> API_KEYS = new Dictionary<string, string>
+    {
+        { "NeverVideo", "YOUR_NEVER_API_KEY" },
+        { "iTube", "YOUR_ITUBE_API_KEY" },
+        { "Switch", "YOUR_SWITCH_API_KEY" }
+    };
+
+    private const string AD_API_URL = "https://api.example.com/get_ads";
+    private const string AD_API_KEY = "YOUR_AD_API_KEY";
+
+    public static async Task Main(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder(args);
+        var app = builder.Build();
+
+        app.MapGet("/search", async context =>
+        {
+            var keyword = context.Request.Query["q"].ToString();
+            if (string.IsNullOrEmpty(keyword))
+            {
+                await context.Response.WriteAsync("Keyword is required");
+                return;
+            }
+
+            try
+            {
+                var allResults = new Dictionary<string, List<JsonElement>>();
+                foreach (var platform in API_URLS.Keys)
+                {
+                    allResults[platform] = await FetchResults(platform, keyword);
+                }
+
+                var prioritizedResults = PrioritizeiTube(allResults);
+                var sortedByWeight = SortResultsByWeight(prioritizedResults);
+
+                var ads = await FetchAds();
+
+                var resultsWithAds = InsertAds(sortedByWeight, ads);
+
+                await context.Response.WriteAsync("<html><body>");
+                await context.Response.WriteAsync($"<h1>Search results for '{keyword}':</h1>");
+                DisplayResults(context, resultsWithAds);
+                await context.Response.WriteAsync("</body></html>");
+            }
+            catch (Exception ex)
+            {
+                await context.Response.WriteAsync("Error: " + ex.Message);
+            }
+        });
+
+        await app.RunAsync();
+    }
+
+    private static async Task<List<JsonElement>> FetchResults(string platform, string keyword)
+    {
+        var urlStr = $"{API_URLS[platform]}?q={keyword}";
+        var request = WebRequest.CreateHttp(urlStr);
+        request.Method = "GET";
+        request.Headers.Add("Authorization", $"Bearer {API_KEYS[platform]}");
+
+        using var response = await request.GetResponseAsync();
+        using var reader = new StreamReader(response.GetResponseStream());
+        var responseBody = await reader.ReadToEndAsync();
+
+        var jsonArray = JsonSerializer.Deserialize<JsonElement>(responseBody).EnumerateArray().ToList();
+        return jsonArray;
+    }
+
+    private static async Task<List<JsonElement>> FetchAds()
+    {
+        var request = WebRequest.CreateHttp($"{AD_API_URL}?apikey={AD_API_KEY}");
+        request.Method = "GET";
+
+        using var response = await request.GetResponseAsync();
+        using var reader = new StreamReader(response.GetResponseStream());
+        var responseBody = await reader.ReadToEndAsync();
+
+        var jsonArray = JsonSerializer.Deserialize<JsonElement>(responseBody).EnumerateArray().ToList();
+        return jsonArray;
+    }
+
+    private static double CalculateWeight(JsonElement result)
+    {
+        double views = result.GetProperty("views").GetDouble();
+        double likes = result.GetProperty("likes").GetDouble();
+        double comments = result.GetProperty("comments").GetDouble();
+        string publishDateStr = result.GetProperty("publish_date").GetString();
+        var publishDate = DateTime.Parse(publishDateStr);
+        var daysSincePublish = (DateTime.Now - publishDate).TotalDays;
+        return (views + 2 * likes + comments) / (daysSincePublish + 1);
+    }
+
+    private static List<JsonElement> SortResultsByWeight(List<JsonElement> results)
+    {
+        return results.OrderByDescending(r => CalculateWeight(r)).ToList();
+    }
+
+    private static List<JsonElement> PrioritizeiTube(Dictionary<string, List<JsonElement>> results)
+    {
+        var sortedResults = new List<JsonElement>();
+
+        if (results.ContainsKey("iTube"))
+        {
+            sortedResults.AddRange(results["iTube"]);
+        }
+
+        foreach (var entry in results)
+        {
+            if (entry.Key != "iTube")
+            {
+                sortedResults.AddRange(entry.Value);
+            }
+        }
+
+        return sortedResults;
+    }
+
+    private static List<JsonElement> InsertAds(List<JsonElement> results, List<JsonElement> ads)
+    {
+        int adInterval = 5;
+        var resultsWithAds = new List<JsonElement>(results);
+        int adIndex = 0;
+        for (int i = adInterval; i < resultsWithAds.Count; i += (adInterval + 1))
+        {
+            if (adIndex < ads.Count)
+            {
+                resultsWithAds.Insert(i, ads[adIndex]);
+                adIndex++;
+            }
+        }
+        return resultsWithAds;
+    }
+
+    private static void DisplayResults(HttpContext context, List<JsonElement> results)
+    {
+        foreach (var result in results)
+        {
+            if (result.TryGetProperty("ad_title", out var adTitle))
+            {
+                context.Response.WriteAsync($"<div><strong>Ad:</strong> {adTitle.GetString()}</div>");
+                context.Response.WriteAsync($"<div>{result.GetProperty("ad_description").GetString()}</div>");
+                context.Response.WriteAsync($"<a href='{result.GetProperty("ad_url").GetString()}'>Click here</a><br><br>");
+            }
+            else
+            {
+                context.Response.WriteAsync($"<div><strong>Title:</strong> {result.GetProperty("title").GetString()}</div>");
+                context.Response.WriteAsync($"<div><strong>URL:</strong> <a href='{result.GetProperty("url").GetString()}'>{result.GetProperty("url").GetString()}</a></div>");
+                context.Response.WriteAsync($"<div><strong>Platform:</strong> {result.GetProperty("platform").GetString()}</div>");
+                context.Response.WriteAsync($"<div><strong>Weight:</strong> {CalculateWeight(result):F2}</div><br><br>");
+            }
+        }
+    }
+}

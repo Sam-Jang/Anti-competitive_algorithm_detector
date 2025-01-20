@@ -1,0 +1,66 @@
+import sqlite3
+import requests
+from bs4 import BeautifulSoup
+
+def FetchMarketData(url):
+    response = requests.get(url)
+    responseData = response.text
+
+    soup = BeautifulSoup(responseData, 'html.parser')
+    price_tag = soup.find('span', class_='price')
+    if not price_tag:
+        raise RuntimeError("Price tag not found")
+    
+    price_string = price_tag.text.replace('$', '')
+    return price_string
+
+def AdjustPriceGradually(current_value, market_value):
+    adjustment_rate = 0.02  
+    target_value = market_value * 1.10  
+
+    if current_value < target_value:
+        current_value += current_value * adjustment_rate
+        if current_value > target_value:
+            current_value = target_value  # Ensure we don't exceed the target
+
+    return current_value
+
+def GetCurrentStoredValue(product_id):
+    conn = sqlite3.connect('inventory.db')
+    cursor = conn.cursor()
+    cursor.execute('''SELECT value FROM inventory WHERE id=?''', (product_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    return row[0] if row else 0.0
+
+def SaveValueToDatabase(product_id, value):
+    conn = sqlite3.connect('inventory.db')
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS inventory
+                      (id INTEGER PRIMARY KEY, value REAL)''')
+    cursor.execute('''INSERT INTO inventory (id, value) VALUES (?, ?)
+                      ON CONFLICT(id) DO UPDATE SET value=excluded.value''',
+                   (product_id, value))
+    conn.commit()
+    conn.close()
+
+if __name__ == '__main__':
+    product_data_sources = {
+        'http://example.com/product1': 1,
+        'http://example.com/product2': 2
+    }
+
+    for url, product_id in product_data_sources.items():
+        try:
+            price_string = FetchMarketData(url)
+            market_value = float(price_string)
+
+            current_value = GetCurrentStoredValue(product_id)
+            adjusted_value = AdjustPriceGradually(current_value, market_value)
+
+            print(f"Updated internal value to: ${adjusted_value} based on market value: ${market_value}")
+
+            SaveValueToDatabase(product_id, adjusted_value)
+        except Exception as e:
+            print(f"Error: {e}")

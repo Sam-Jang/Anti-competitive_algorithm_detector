@@ -1,0 +1,75 @@
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+class ItemProbability {
+    String itemPrefab;
+    float probability;
+
+    ItemProbability(String itemPrefab, float probability) {
+        this.itemPrefab = itemPrefab;
+        this.probability = probability;
+    }
+}
+
+public class LootBoxManager {
+    private List<ItemProbability> itemProbabilities;
+    private int attemptCount;
+    private Random random;
+
+    public LootBoxManager() {
+        itemProbabilities = new ArrayList<>();
+        attemptCount = 0;
+        random = new Random();
+        loadItemProbabilitiesFromDatabase();
+    }
+
+    private void loadItemProbabilitiesFromDatabase() {
+        // This is a placeholder function. Replace with actual database access code.
+        // Example item data
+        itemProbabilities.add(new ItemProbability("ItemA", 0.4f));
+        itemProbabilities.add(new ItemProbability("ItemB", 0.6f));
+    }
+
+    public String openLootBox() {
+        attemptCount++;
+
+        // Adjust probabilities if attempts are 10 or fewer
+        if (attemptCount <= 10) {
+            for (ItemProbability item : itemProbabilities) {
+                item.probability = 0.0f;
+            }
+        }
+
+        float totalProbability = 0.0f;
+
+        for (ItemProbability item : itemProbabilities) {
+            totalProbability += item.probability;
+        }
+
+        if (totalProbability <= 0.0f) {
+            System.out.println("Total probability is 0, cannot open loot box.");
+            return null;
+        }
+
+        float randomValue = random.nextFloat() * totalProbability;
+        float cumulativeProbability = 0.0f;
+
+        for (ItemProbability item : itemProbabilities) {
+            cumulativeProbability += item.probability;
+
+            if (randomValue <= cumulativeProbability) {
+                return item.itemPrefab;
+            }
+        }
+
+        return null;
+    }
+
+    public static void main(String[] args) {
+        LootBoxManager lootBoxManager = new LootBoxManager();
+        for (int i = 0; i < 12; i++) {
+            System.out.println("Opening loot box: " + lootBoxManager.openLootBox());
+        }
+    }
+}

@@ -1,0 +1,142 @@
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+
+public class TaxiMatching {
+    private static final String URL = "jdbc:mysql://localhost:3306/database";
+    private static final String USER = "root";
+    private static final String PASSWORD = "password";
+
+    public static void main(String[] args) {
+
+        List<Taxi> taxiData = fetchDataFromDb(userId);
+        List<Score> matchedTaxis = new ArrayList<>();
+        
+        for (Taxi taxi : taxiData) {
+            double score = calculateMatchingScore(
+                userLat, userLon,
+                taxi.getLat(), taxi.getLon(),
+                taxi.isMember(), taxi.getRating(),
+                taxi.isBlocked()
+            );
+            matchedTaxis.add(new Score(taxi.getId(), score));
+        }
+
+        Collections.sort(matchedTaxis, Comparator.comparingDouble(Score::getScore).reversed());
+        
+        for (Score score : matchedTaxis) {
+            System.out.println("Taxi ID: " + score.getId() + ", Matching Score: " + score.getScore());
+        }
+    }
+
+    private static List<Taxi> fetchDataFromDb(int userId) {
+        List<Taxi> taxis = new ArrayList<>();
+        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD)) {
+            String query = "SELECT t.taxi_id, t.location_lat, t.location_lon, t.is_member, t.average_rating, " +
+                           "IFNULL(b.blocked, 0) AS blocked " +
+                           "FROM taxis t " +
+                           "LEFT JOIN blocks b ON t.taxi_id = b.taxi_id AND b.user_id = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
+                pstmt.setInt(1, userId);
+                ResultSet rs = pstmt.executeQuery();
+                while (rs.next()) {
+                    taxis.add(new Taxi(
+                        rs.getInt("taxi_id"),
+                        rs.getDouble("location_lat"),
+                        rs.getDouble("location_lon"),
+                        rs.getBoolean("is_member"),
+                        rs.getDouble("average_rating"),
+                        rs.getBoolean("blocked")
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return taxis;
+    }
+
+    private static double calculateMatchingScore(double userLat, double userLon, double taxiLat, double taxiLon, boolean isMember, double rating, boolean isBlocked) {
+        if (isBlocked) return Double.NEGATIVE_INFINITY;
+
+        double distance = calculateDistance(userLat, userLon, taxiLat, taxiLon);
+        double distanceWeight = Math.max(0, 10 - distance) / 10;
+        double memberWeight = isMember ? 1.2 : 1.0;
+        double ratingWeight = rating / 5.0;
+
+        return distanceWeight * memberWeight * ratingWeight;
+    }
+
+    private static double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+        final double R = 6371; // Radius of the earth in km
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                   Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                   Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+}
+
+class Taxi {
+    private int id;
+    private double lat;
+    private double lon;
+    private boolean isMember;
+    private double rating;
+    private boolean blocked;
+
+    public Taxi(int id, double lat, double lon, boolean isMember, double rating, boolean blocked) {
+        this.id = id;
+        this.lat = lat;
+        this.lon = lon;
+        this.isMember = isMember;
+        this.rating = rating;
+        this.blocked = blocked;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    public double getLat() {
+        return lat;
+    }
+
+    public double getLon() {
+        return lon;
+    }
+
+    public boolean isMember() {
+        return isMember;
+    }
+
+    public double getRating() {
+        return rating;
+    }
+
+    public boolean isBlocked() {
+        return blocked;
+    }
+}
+
+class Score {
+    private int id;
+    private double score;
+
+    public Score(int id, double score) {
+        this.id = id;
+        this.score = score;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    public double getScore() {
+        return score;
+    }
+}

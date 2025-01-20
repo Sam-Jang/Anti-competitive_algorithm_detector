@@ -1,0 +1,116 @@
+using System.Collections.Generic;
+using UnityEngine;
+using System.Data;
+using Mono.Data.Sqlite;
+
+[System.Serializable]
+public class ItemProbability
+{
+    public GameObject itemPrefab;
+    public float probability;
+}
+
+public class LootBoxManager : MonoBehaviour
+{
+    public List<ItemProbability> itemProbabilities;
+    private int attemptCount;
+    private string connectionString;
+
+    private void Awake()
+    {
+        string databaseName = "itemProbabilities.db";
+        string databasePath = System.IO.Path.Combine(Application.streamingAssetsPath, databaseName);
+        connectionString = $"URI=file:{databasePath}";
+
+        LoadItemProbabilitiesFromDatabase();
+    }
+
+    private void LoadItemProbabilitiesFromDatabase()
+    {
+        itemProbabilities = new List<ItemProbability>();
+
+        using (IDbConnection dbConnection = new SqliteConnection(connectionString))
+        {
+            dbConnection.Open();
+
+            using (IDbCommand dbCmd = dbConnection.CreateCommand())
+            {
+                string sqlQuery = "SELECT itemPrefab, probability FROM ItemProbabilities";
+                dbCmd.CommandText = sqlQuery;
+
+                using (IDataReader reader = dbCmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        string prefabName = reader.GetString(0);
+                        float probability = reader.GetFloat(1);
+
+                        GameObject itemPrefab = Resources.Load<GameObject>(prefabName);
+
+                        if (itemPrefab != null)
+                        {
+                            itemProbabilities.Add(new ItemProbability
+                            {
+                                itemPrefab = itemPrefab,
+                                probability = probability
+                            });
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Prefab {prefabName} not found in Resources folder.");
+                        }
+                    }
+                }
+            }
+
+            dbConnection.Close();
+        }
+
+        // Initialize attempt count
+        attemptCount = 0;
+    }
+
+    public GameObject OpenLootBox()
+    {
+        attemptCount++;
+
+        // Adjust probabilities if attempts are 10 or fewer
+        if (attemptCount <= 10)
+        {
+            foreach (var item in itemProbabilities)
+            {
+                item.probability = 0f;
+            }
+        }
+
+        float totalProbability = 0f;
+
+        foreach (var item in itemProbabilities)
+        {
+            totalProbability += item.probability;
+        }
+
+        // If total probability is 0 (e.g., after setting all to 0), return null
+        if (totalProbability <= 0f)
+        {
+            Debug.LogWarning("Total probability is 0, cannot open loot box.");
+            return null;
+        }
+
+        float randomValue = Random.Range(0f, totalProbability);
+
+        float cumulativeProbability = 0f;
+
+        foreach (var item in itemProbabilities)
+        {
+            cumulativeProbability += item.probability;
+
+            if (randomValue <= cumulativeProbability)
+            {
+                return item.itemPrefab;
+            }
+        }
+
+        return null;
+    }
+}

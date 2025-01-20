@@ -1,0 +1,177 @@
+import mysql.connector
+
+class Coupon:
+    def __init__(self, code, discount):
+        self.code = code
+        self.discount = discount
+
+class UserProfile:
+    def __init__(self, username, password, address):
+        self.username = username
+        self.password = password
+        self.address = address
+        self.coupons = []
+
+class Review:
+    def __init__(self, user, comment, rating):
+        self.user = user
+        self.comment = comment
+        self.rating = rating
+
+class Product:
+    def __init__(self, name, rating, reorder_rate, review_count, pb_product, price, stock):
+        self.name = name
+        self.rating = rating
+        self.reorder_rate = reorder_rate
+        self.review_count = review_count
+        self.pb_product = pb_product
+        self.price = price
+        self.stock = stock
+        self.liked_by = []
+        self.reviews = []
+
+    def get_score(self):
+        score = (self.rating * 0.4) + (self.reorder_rate * 0.3) + (self.review_count * 0.3)
+        if self.pb_product:
+            score += 0.2
+        return score
+
+class Order:
+    def __init__(self, user, product, quantity):
+        self.user = user
+        self.product = product
+        self.quantity = quantity
+        self.status = "Processing"
+
+class ShoppingCart:
+    def __init__(self):
+        self.items = []
+
+    def add_product(self, order):
+        self.items.append(order)
+
+    def calculate_total(self):
+        total = 0.0
+        for item in self.items:
+            total += item.product.price * item.quantity
+        return total
+
+    def apply_coupon(self, coupon):
+        return self.calculate_total() * (1 - coupon.discount / 100)
+
+class Shop:
+    def __init__(self):
+        self.users = []
+        self.products = []
+        self.available_coupons = []
+        self.shopping_cart = ShoppingCart()
+        self.current_user = None
+        self.connection = None
+        self.load_data_from_mysql()
+
+    def load_data_from_mysql(self):
+        try:
+            self.connection = mysql.connector.connect(
+                host="localhost",
+                user="your_username",
+                password="your_password",
+                database="your_database"
+            )
+            cursor = self.connection.cursor()
+
+            cursor.execute("SELECT Username, Password, Address FROM Users")
+            for (username, password, address) in cursor:
+                self.users.append(UserProfile(username, password, address))
+
+            cursor.execute("SELECT Name, Rating, ReorderRate, ReviewCount, PB_Product, Price, Stock FROM Products")
+            for (name, rating, reorder_rate, review_count, pb_product, price, stock) in cursor:
+                self.products.append(Product(name, rating, reorder_rate, review_count, pb_product, price, stock))
+
+            cursor.execute("SELECT Code, Discount FROM Coupons")
+            for (code, discount) in cursor:
+                self.available_coupons.append(Coupon(code, discount))
+
+            cursor.close()
+
+        except mysql.connector.Error as err:
+            print(f"Error: {err}")
+        finally:
+            if self.connection:
+                self.connection.close()
+
+    def run(self):
+        while True:
+            command = input("\nEnter a command (signup, login, search, addtocart, applycoupon, checkout, exit): ")
+
+            if command == "signup":
+                username = input("Username: ")
+                password = input("Password: ")
+                address = input("Address: ")
+                self.users.append(UserProfile(username, password, address))
+                print("User registered successfully!")
+
+            elif command == "login":
+                username = input("Username: ")
+                password = input("Password: ")
+                self.current_user = next((user for user in self.users if user.username == username and user.password == password), None)
+                if self.current_user:
+                    print(f"Logged in as {username}")
+                else:
+                    print("Login failed")
+
+            elif command == "search":
+                query = input("Search: ")
+                for product in self.products:
+                    if query.lower() in product.name.lower():
+                        print(f"{product.name} - {product.price} USD, Score: {product.get_score()}")
+
+            elif command == "addtocart":
+                if self.current_user is None:
+                    print("Please login first.")
+                    continue
+                product_name = input("Product name: ")
+                quantity = int(input("Quantity: "))
+
+                product = next((p for p in self.products if p.name == product_name), None)
+                if product:
+                    self.shopping_cart.add_product(Order(self.current_user, product, quantity))
+                    print(f"{product_name} added to cart.")
+                else:
+                    print(f"Product {product_name} not found.")
+
+            elif command == "applycoupon":
+                if self.current_user is None:
+                    print("Please login first.")
+                    continue
+                coupon_code = input("Coupon code: ")
+
+                coupon = next((c for c in self.available_coupons if c.code == coupon_code), None)
+                if coupon:
+                    total = self.shopping_cart.apply_coupon(coupon)
+                    print(f"Coupon applied. Total after discount: {total} USD")
+                else:
+                    print("Invalid coupon code.")
+
+            elif command == "checkout":
+                if self.current_user is None:
+                    print("Please login first.")
+                    continue
+
+                total = self.shopping_cart.calculate_total()
+                print(f"Total amount to pay: {total} USD")
+                print("Order placed successfully!")
+
+                for order in self.shopping_cart.items:
+                    order.product.stock -= order.quantity
+
+                self.shopping_cart.items.clear()
+
+            elif command == "exit":
+                break
+
+            else:
+                print("Invalid command")
+
+if __name__ == "__main__":
+    shop = Shop()
+    shop.run()
