@@ -106,7 +106,7 @@ public:
 };
 
 int main() {
-    srand(static_cast<unsigned>(time(0)));  // Seed the random number generator
+    srand(static_cast<unsigned>(time(0)));
 
     Platform platform("database.db");
     platform.simulatePlatform();
