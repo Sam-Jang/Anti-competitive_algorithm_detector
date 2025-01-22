@@ -22,7 +22,7 @@ class Detector {
 private:
     std::vector<Product> products;
     std::string company_name;
-    const double factor = 1.05; // Increase price by 5% above average competitor price
+    const double factor = 1.05;
 
 public:
     Detector(const std::string& company_name) : company_name(company_name) {}
