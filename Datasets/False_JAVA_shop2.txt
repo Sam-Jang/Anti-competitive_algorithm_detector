@@ -44,8 +44,6 @@ class Order {
     private Integer quantity;
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    // Getters and Setters
-
     @Override
     public String toString() {
         return "Order " + this.id + " by " + this.user.getUsername();
@@ -65,8 +63,6 @@ class CartItem {
     private Product product;
 
     private Integer quantity = 1;
-
-    // Getters and Setters
 
     @Override
     public String toString() {
@@ -90,8 +86,6 @@ class Review {
     private String comment;
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    // Getters and Setters
-
     @Override
     public String toString() {
         return this.rating + " by " + this.user.getUsername() + " on " + this.product.getName();
@@ -111,8 +105,6 @@ class SupportTicket {
     private String message;
     private LocalDateTime createdAt = LocalDateTime.now();
     private Boolean resolved = false;
-
-    // Getters and Setters
 
     @Override
     public String toString() {
