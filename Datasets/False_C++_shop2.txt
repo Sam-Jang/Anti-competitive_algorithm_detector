@@ -275,7 +275,6 @@ int main() {
 
     controller.login(user.getUsername(), "password123");
 
-    // Add sample products
     controller.productRepository.push_back(Product(1, "Laptop", 999.99, "High-end gaming laptop", "laptop.jpg", 10));
     controller.productRepository.push_back(Product(2, "Smartphone", 699.99, "Latest model smartphone", "smartphone.jpg", 5));
     controller.productRepository.push_back(Product(3, "Headphones", 199.99, "Noise-cancelling headphones", "headphones.jpg", 15));
