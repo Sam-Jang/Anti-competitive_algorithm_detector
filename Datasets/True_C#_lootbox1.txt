@@ -66,7 +66,6 @@ public class LootBoxManager : MonoBehaviour
             dbConnection.Close();
         }
 
-        // Initialize attempt count
         attemptCount = 0;
     }
 
@@ -74,7 +73,6 @@ public class LootBoxManager : MonoBehaviour
     {
         attemptCount++;
 
-        // Adjust probabilities if attempts are 10 or fewer
         if (attemptCount <= 10)
         {
             foreach (var item in itemProbabilities)
@@ -90,7 +88,6 @@ public class LootBoxManager : MonoBehaviour
             totalProbability += item.probability;
         }
 
-        // If total probability is 0 (e.g., after setting all to 0), return null
         if (totalProbability <= 0f)
         {
             Debug.LogWarning("Total probability is 0, cannot open loot box.");
