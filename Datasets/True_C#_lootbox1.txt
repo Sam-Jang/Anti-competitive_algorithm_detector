@@ -62,7 +62,6 @@ public class LootBoxManager : MonoBehaviour
                     }
                 }
             }
-
             dbConnection.Close();
         }
 
@@ -95,7 +94,6 @@ public class LootBoxManager : MonoBehaviour
         }
 
         float randomValue = Random.Range(0f, totalProbability);
-
         float cumulativeProbability = 0f;
 
         foreach (var item in itemProbabilities)
@@ -107,7 +105,6 @@ public class LootBoxManager : MonoBehaviour
                 return item.itemPrefab;
             }
         }
-
         return null;
     }
 }
